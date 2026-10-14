@@ -1,0 +1,39 @@
+{
+  "day": 11,
+  "topic": "Data Interpretation",
+  "difficulty": "Easy",
+  "time_sec": 45,
+  "question": "A company's quarterly sales (in Rs lakh) were Q1: 120, Q2: 150, Q3: 180, Q4: 210. What is the average quarterly sales for the year?",
+  "options": [
+    "165",
+    "170",
+    "175",
+    "180"
+  ],
+  "correct_option": "A",
+  "final_answer": "165",
+  "solution": "Total = 120+150+180+210 = 660. Average = 660/4 = 165.",
+  "expected_steps": {
+    "steps": [
+      {
+        "label": "Step 1: Total sales",
+        "lines": [
+          "120 + 150 + 180 + 210",
+          "= 660"
+        ],
+        "speech": "First, mana four quarters sales anni add cheddam. 120 plus 150 plus 180 plus 210, total 660.",
+        "visual": "bar_chart"
+      },
+      {
+        "label": "Step 2: Average",
+        "lines": [
+          "660 / 4",
+          "= 165"
+        ],
+        "speech": "Ippudu average kosam total ni 4 tho divide cheyyali. 660 divided by 4 is 165."
+      }
+    ],
+    "tip": "Average = Total / Number of values",
+    "answer": "165"
+  }
+}

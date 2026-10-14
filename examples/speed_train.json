@@ -1,0 +1,47 @@
+{
+  "day": 10,
+  "topic": "Speed, Time & Distance",
+  "difficulty": "Easy",
+  "time_sec": 50,
+  "question": "A train 150 m long crosses a platform 250 m long in 20 seconds. What is the speed of the train in km/h?",
+  "options": [
+    "72",
+    "90",
+    "108",
+    "120"
+  ],
+  "correct_option": "A",
+  "final_answer": "72 km/h",
+  "solution": "Distance = 150 + 250 = 400 m. Speed = 400/20 = 20 m/s. 20 x 18/5 = 72 km/h.",
+  "expected_steps": {
+    "steps": [
+      {
+        "label": "Step 1: Total distance",
+        "lines": [
+          "150 + 250",
+          "= 400 m"
+        ],
+        "speech": "Train platform ni cross cheyyali ante, train length plus platform length travel cheyyali. 150 plus 250 is 400 meters.",
+        "visual": "train_crossing"
+      },
+      {
+        "label": "Step 2: Speed in m/s",
+        "lines": [
+          "400 / 20",
+          "= 20 m/s"
+        ],
+        "speech": "Speed is distance by time. 400 by 20 is 20 meters per second."
+      },
+      {
+        "label": "Step 3: Convert",
+        "lines": [
+          "20 x 18/5",
+          "= 72 km/h"
+        ],
+        "speech": "m/s ni km/h ki marchali ante 18 by 5 tho multiply cheyyali. 20 times 18 by 5 is 72 kilometres per hour."
+      }
+    ],
+    "tip": "m/s to km/h: multiply by 18/5",
+    "answer": "72 km/h"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "day": 12,
+  "topic": "Percentages",
+  "difficulty": "Easy",
+  "time_sec": 40,
+  "question": "The price of an item rises from Rs 80 to Rs 100. What is the percentage increase?",
+  "options": [
+    "20%",
+    "25%",
+    "30%",
+    "35%"
+  ],
+  "correct_option": "B",
+  "final_answer": "25%",
+  "solution": "Increase = 100 - 80 = 20. Percentage increase = 20/80 x 100 = 25%.",
+  "expected_steps": {
+    "steps": [
+      {
+        "label": "Step 1: Increase",
+        "lines": [
+          "100 - 80",
+          "= 20"
+        ],
+        "speech": "First, price entha perigindho chudali. 100 minus 80 is 20."
+      },
+      {
+        "label": "Step 2: Percentage",
+        "lines": [
+          "20 / 80 x 100",
+          "= 25%"
+        ],
+        "speech": "Percentage increase ante, increase ni original price tho divide chesi 100 tho multiply cheyyali. 20 by 80 times 100 is 25 percent."
+      }
+    ],
+    "tip": "% change = (Change / Original) x 100",
+    "answer": "25%"
+  }
+}

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solution-video"
+version = "0.0.1"
+description = "JSON-driven solution video generator (Tanglish voice-over) for aptitude content"
+requires-python = ">=3.10"
+dependencies = ["pillow", "numpy", "scipy", "pydantic>=2", "requests"]
+
+[project.optional-dependencies]
+voice = ["edge-tts", "gradio_client"]
+dev = ["pytest"]
+
+[project.scripts]
+solution-video = "solution_video.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

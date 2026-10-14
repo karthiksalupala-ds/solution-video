@@ -1,0 +1,47 @@
+{
+  "day": 13,
+  "topic": "Time and Work",
+  "difficulty": "Medium",
+  "time_sec": 60,
+  "question": "A can finish a work in 12 days and B can finish it in 24 days. Working together, in how many days will they finish it?",
+  "options": [
+    "6 days",
+    "8 days",
+    "9 days",
+    "10 days"
+  ],
+  "correct_option": "B",
+  "final_answer": "8 days",
+  "solution": "A's 1 day work = 1/12, B's = 1/24. Together = 1/12 + 1/24 = 3/24 = 1/8. So 8 days.",
+  "expected_steps": {
+    "steps": [
+      {
+        "label": "Step 1: One day work",
+        "lines": [
+          "A = 1/12",
+          "B = 1/24"
+        ],
+        "speech": "A oka roju lo 1 by 12 work chestadu, B oka roju lo 1 by 24 work chestadu."
+      },
+      {
+        "label": "Step 2: Together",
+        "lines": [
+          "1/12 + 1/24",
+          "= 2/24 + 1/24",
+          "= 3/24 = 1/8"
+        ],
+        "speech": "Rendu add cheste, 2 by 24 plus 1 by 24, ante 3 by 24, simplify cheste 1 by 8."
+      },
+      {
+        "label": "Step 3: Days",
+        "lines": [
+          "1 / (1/8)",
+          "= 8 days"
+        ],
+        "speech": "Oka roju lo 1 by 8 work aite, motham work 8 rojullo aipothundhi."
+      }
+    ],
+    "tip": "Together rate = sum of individual rates",
+    "answer": "8 days"
+  }
+}
