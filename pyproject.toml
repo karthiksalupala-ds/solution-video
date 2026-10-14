@@ -7,11 +7,11 @@ name = "solution-video"
 version = "0.0.1"
 description = "JSON-driven solution video generator (Tanglish voice-over) for aptitude content"
 requires-python = ">=3.10"
-dependencies = ["pillow", "numpy", "scipy", "pydantic>=2", "requests"]
+dependencies = ["Pillow>=10.4,<12", "numpy>=1.26,<3", "pydantic>=2.8,<3", "requests>=2.32,<3"]
 
 [project.optional-dependencies]
-voice = ["edge-tts", "gradio_client"]
-dev = ["pytest"]
+voice = ["edge-tts>=6.1,<8", "gradio_client>=1.0,<3"]
+dev = ["pytest>=8,<9"]
 
 [project.scripts]
 solution-video = "solution_video.cli:main"
@@ -21,3 +21,4 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

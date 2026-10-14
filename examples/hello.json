@@ -1,0 +1,6 @@
+{
+  "title": "Hello, video engine",
+  "message": "A reusable scene rendered from JSON, with motion, safe typography, and deterministic sound.",
+  "duration_s": 10,
+  "seed": 7
+}

@@ -1,6 +1,6 @@
 {
   "name": "default",
-  "canvas": {"width": 720, "height": 1280, "fps": 30, "supersample": 2},
+  "canvas": {"width": 720, "height": 1280, "fps": 30, "supersample": 2, "selective_supersample": true},
   "safe_margin_px": 40,
   "min_body_font_px": 36,
   "fonts": {"bold": "fonts/Poppins-Bold.ttf", "medium": "fonts/Poppins-Medium.ttf", "regular": "fonts/Poppins-Regular.ttf"},
@@ -9,6 +9,7 @@
     "text": [255, 255, 255], "muted": [165, 175, 215],
     "accent": [255, 196, 0], "success": [60, 220, 130], "info": [70, 140, 255], "warn": [230, 130, 40]
   },
+  "sizes": {"title_px": 82, "body_px": 42, "caption_px": 30, "footer_px": 24},
   "motion": {"scene_transition_s": 0.35, "reveal_s": 0.45, "stagger_s": 0.12, "easing_default": "out_cubic"},
   "branding": {"footer_text": "Aptitude Daily", "show_day_pill": true}
 }

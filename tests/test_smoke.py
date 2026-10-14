@@ -18,9 +18,16 @@ def test_cli_help_ok():
 def test_examples_are_valid_json_with_required_fields():
     for f in (ROOT / "examples").glob("*.json"):
         d = json.loads(f.read_text(encoding="utf-8"))
-        assert len(d["options"]) == 4 and d["correct_option"] in "ABCD" and d["final_answer"]
+        if "options" in d:
+            assert len(d["options"]) == 4 and d["correct_option"] in "ABCD" and d["final_answer"]
+        else:
+            assert d["title"] and d["message"] and d["duration_s"] > 0
 
 
 def test_fonts_present():
     for name in ("Bold", "Medium", "Regular"):
         assert (ROOT / "fonts" / f"Poppins-{name}.ttf").exists()
+
+
+def test_font_license_present():
+    assert (ROOT / "fonts" / "OFL.txt").exists()
