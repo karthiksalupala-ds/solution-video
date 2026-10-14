@@ -8,3 +8,5 @@ out/
 *.egg-info/
 dist/
 build/
+# Keep local prompt documentation out of GitHub
+/docs/
