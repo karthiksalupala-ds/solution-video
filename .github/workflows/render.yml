@@ -1,17 +1,118 @@
-name: render
+name: Render examples
+
 on:
   workflow_dispatch:
+    inputs:
+      input_json:
+        description: "Example JSON path inside examples/"
+        required: true
+        default: examples/di_average.json
+        type: string
+      voice:
+        description: "Request speech synthesis (not available in v0.1.0)"
+        required: true
+        default: "off"
+        type: choice
+        options:
+          - "off"
+          - "on"
   pull_request:
+
+permissions:
+  contents: read
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: pip install -e ".[dev]"
-      - run: pytest -q
-      # Phase 6 adds: render examples, validate output, upload mp4 artifact.
+
+      - name: Start elapsed-time measurement
+        run: echo "job_start=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Validate workflow-dispatch selection
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_JSON: ${{ inputs.input_json }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path.cwd().resolve()
+          path = (root / os.environ["INPUT_JSON"]).resolve()
+          if path.parent != (root / "examples").resolve() or path.suffix.lower() != ".json" or not path.is_file():
+              raise SystemExit("input_json must name an existing JSON file directly inside examples/")
+          PY
+
+      - name: Install package and test dependencies
+        id: install
+        run: |
+          started=$(date +%s)
+          python -m pip install ".[dev]"
+          echo "seconds=$(($(date +%s)-started))" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Render and report timings
+        id: render
+        env:
+          INPUT_JSON: ${{ inputs.input_json || 'examples/di_average.json' }}
+          VOICE_SETTING: ${{ inputs.voice || 'off' }}
+        run: |
+          set -euo pipefail
+          started=$(date +%s)
+          mkdir -p out
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            inputs=(examples/di_average.json examples/percent_increase.json examples/speed_train.json examples/time_work.json)
+            voice_setting=off
+          else
+            inputs=("$INPUT_JSON")
+            voice_setting="$VOICE_SETTING"
+          fi
+          if [[ "$voice_setting" == "on" ]]; then
+            solution-video voice-test
+          fi
+          for input in "${inputs[@]}"; do
+            name=$(basename "$input" .json)
+            args=(render --input "$input" --out "out/$name.mp4")
+            if [[ "$voice_setting" == "off" ]]; then
+              args+=(--no-voice)
+            fi
+            solution-video "${args[@]}"
+          done
+          finished=$(date +%s)
+          echo "seconds=$((finished-started))" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Render job timing"
+            echo
+            echo "- Package install: ${{ steps.install.outputs.seconds }} seconds"
+            echo "- Render/test step: $((finished-started)) seconds"
+            echo "- Measured job elapsed: $((finished-${job_start:-finished})) seconds (timer starts after checkout/setup-python)"
+            echo "- Voice selection: $voice_setting"
+            echo
+            echo "| Artifact | Size (bytes) |"
+            echo "|---|---:|"
+            for video in out/*.mp4; do
+              [[ -e "$video" ]] || continue
+              echo "| $(basename "$video") | $(stat -c%s "$video") |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload rendered videos
+        uses: actions/upload-artifact@v4
+        with:
+          name: solution-videos
+          path: out/*.mp4
+          if-no-files-found: error

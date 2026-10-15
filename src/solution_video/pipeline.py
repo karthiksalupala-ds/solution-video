@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from .engine.audio import AudioMixer, write_wav
 from .engine.encode import encode_frames
+from .engine.output import OutputValidationError, validate_output
 from .engine.theme import Theme, load_theme
 from .schema import Meta, SolutionSpec
 from .schema import QuestionInput
@@ -57,7 +58,14 @@ def plan_scenes(spec: SolutionSpec, theme: Theme) -> tuple[PlannedScene, ...]:
     return tuple(plan)
 
 
-def render(spec: SolutionSpec, theme: Theme, output_path: Path, voice: object | None = None) -> Meta:
+def render(
+    spec: SolutionSpec,
+    theme: Theme,
+    output_path: Path,
+    voice: object | None = None,
+    *,
+    no_voice: bool = False,
+) -> Meta:
     """Render a validated spec; voice is reserved for the Phase-5 contract."""
     del voice
     gate = verify(spec.question_input, spec)
@@ -81,19 +89,47 @@ def render(spec: SolutionSpec, theme: Theme, output_path: Path, voice: object | 
         encode_frames(frames, theme.canvas.width, theme.canvas.height, theme.canvas.fps, wav_path, output_path, duration_s)
     finally:
         wav_path.unlink(missing_ok=True)
-    meta = Meta(path=str(output_path), duration_s=duration_s, size_bytes=output_path.stat().st_size, answer_verified=True)
+    try:
+        validate_output(output_path, expect_audio=True)
+    except OutputValidationError:
+        output_path.unlink(missing_ok=True)
+        raise
+    warnings = [] if no_voice else ["Speech synthesis is unavailable in this release; output contains sound effects only."]
+    meta = Meta(
+        path=str(output_path),
+        duration_s=duration_s,
+        size_bytes=output_path.stat().st_size,
+        answer_verified=True,
+        voice_provider="none",
+        warnings=warnings,
+    )
     output_path.with_suffix(".meta.json").write_text(json.dumps(meta.model_dump(), indent=2), encoding="utf-8")
     return meta
 
 
-def render_from_file(input_path: Path, output_path: Path, *, theme_path: str | Path | None = None) -> Meta:
+def render_from_file(
+    input_path: Path,
+    output_path: Path,
+    *,
+    theme_path: str | Path | None = None,
+    seed: int | None = None,
+    no_voice: bool = False,
+) -> Meta:
     try:
         payload = json.loads(input_path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise ValueError(f"Unable to read input JSON: {input_path}") from exc
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid input JSON: {exc.msg}") from exc
-    return render(SolutionSpec.from_payload(payload), load_theme(Path(theme_path) if theme_path else None), output_path)
+    spec = SolutionSpec.from_payload(payload)
+    if seed is not None:
+        if not 0 <= seed <= 2**31 - 1:
+            raise ValueError("seed must be between 0 and 2147483647")
+        spec = spec.model_copy(update={"seed": seed})
+    return render(
+        spec, load_theme(Path(theme_path) if theme_path else None), output_path,
+        no_voice=no_voice,
+    )
 
 
 def generate_steps(
@@ -243,6 +279,11 @@ def render_hello(input_path: Path, output_path: Path, *, theme_path: str | Path 
         )
     finally:
         wav_path.unlink(missing_ok=True)
+    try:
+        validate_output(output_path, expect_audio=True)
+    except OutputValidationError:
+        output_path.unlink(missing_ok=True)
+        raise
     meta = Meta(path=str(output_path), duration_s=frame_count / theme.canvas.fps, size_bytes=output_path.stat().st_size, answer_verified=False)
     output_path.with_suffix(".meta.json").write_text(json.dumps(meta.model_dump(), indent=2), encoding="utf-8")
     return meta

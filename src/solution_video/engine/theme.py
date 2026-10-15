@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    source_root = Path(__file__).resolve().parents[3]
+    candidates = (source_root, Path(__file__).resolve().parents[2], Path(sys.prefix))
+    for root in candidates:
+        if (root / "themes").is_dir() and (root / "fonts").is_dir():
+            return root
+    raise FileNotFoundError("Packaged themes and fonts are missing; reinstall solution-video with package data.")
 
 
 @dataclass(frozen=True)

@@ -144,6 +144,7 @@ class Meta(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     voice_provider: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    version: str = "0.1.0"
 
 
 def _normalise_answer(value: str) -> str:

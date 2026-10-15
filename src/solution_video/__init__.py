@@ -1,7 +1,8 @@
 """solution-video: deterministic JSON-driven video rendering."""
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
-from .api import render
+from .api import render, render_from_today
+from .schema import Meta
 
-__all__ = ["__version__", "render"]
+__all__ = ["Meta", "__version__", "render", "render_from_today"]
