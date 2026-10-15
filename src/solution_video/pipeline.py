@@ -7,10 +7,15 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from .engine.audio import AudioMixer, write_wav
 from .engine.encode import encode_frames
 from .engine.theme import Theme, load_theme
 from .schema import Meta, SolutionSpec
+from .schema import QuestionInput
+from .llm import JsonProvider, prompt_for_question
+from .verify import verify
 from .scenes import AnswerScene, OutroScene, QuestionScene, StepScene, TipScene, TitleScene
 from .scenes.hello import HelloScene, HelloSpec
 
@@ -50,6 +55,11 @@ def plan_scenes(spec: SolutionSpec, theme: Theme) -> tuple[PlannedScene, ...]:
 def render(spec: SolutionSpec, theme: Theme, output_path: Path, voice: object | None = None) -> Meta:
     """Render a validated spec; voice is reserved for the Phase-5 contract."""
     del voice
+    gate = verify(spec.question_input, spec)
+    if not gate.passed:
+        meta = Meta(path=str(output_path), duration_s=0, size_bytes=0, answer_verified=False, status="blocked", reasons=list(gate.reasons))
+        output_path.with_suffix(".meta.json").write_text(json.dumps(meta.model_dump(), indent=2), encoding="utf-8")
+        raise ValueError("Accuracy gate blocked render: " + "; ".join(gate.reasons))
     plan = plan_scenes(spec, theme)
     duration_s = sum(item.duration_s for item in plan)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -66,7 +76,7 @@ def render(spec: SolutionSpec, theme: Theme, output_path: Path, voice: object | 
         encode_frames(frames, theme.canvas.width, theme.canvas.height, theme.canvas.fps, wav_path, output_path, duration_s)
     finally:
         wav_path.unlink(missing_ok=True)
-    meta = Meta(path=str(output_path), duration_s=duration_s, size_bytes=output_path.stat().st_size, answer_verified=False)
+    meta = Meta(path=str(output_path), duration_s=duration_s, size_bytes=output_path.stat().st_size, answer_verified=True)
     output_path.with_suffix(".meta.json").write_text(json.dumps(meta.model_dump(), indent=2), encoding="utf-8")
     return meta
 
@@ -79,6 +89,29 @@ def render_from_file(input_path: Path, output_path: Path, *, theme_path: str | P
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid input JSON: {exc.msg}") from exc
     return render(SolutionSpec.from_payload(payload), load_theme(Path(theme_path) if theme_path else None), output_path)
+
+
+def generate_steps(question: QuestionInput, provider: JsonProvider) -> SolutionSpec:
+    """Ask a provider for steps and bind them to the authoritative question."""
+    prompt = prompt_for_question(question.model_dump(mode="json"))
+    schema = SolutionSpec.model_json_schema()
+    for attempt in range(3):
+        payload = provider.generate_json(prompt, schema)
+        payload["question_input"] = question.model_dump(mode="json")
+        try:
+            spec = SolutionSpec.model_validate(payload)
+        except ValidationError as exc:
+            if attempt == 2:
+                raise ValueError("Generated steps did not match the required schema") from exc
+            prompt = f"{prompt}\n\nYour previous JSON failed schema validation: {exc}. Return a corrected JSON object only."
+            continue
+        gate = verify(question, spec)
+        if gate.passed:
+            return spec
+        if attempt == 2:
+            raise ValueError("Accuracy gate blocked generated steps: " + "; ".join(gate.reasons))
+        prompt = f"{prompt}\n\nYour previous JSON failed the accuracy gate: {'; '.join(gate.reasons)}. Return corrected JSON only."
+    raise AssertionError("unreachable")
 
 
 def render_hello(input_path: Path, output_path: Path, *, theme_path: str | Path | None = None) -> Meta:

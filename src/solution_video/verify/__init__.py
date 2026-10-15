@@ -1,1 +1,5 @@
-"""Accuracy gate: answer match, safe arithmetic evaluation, option consistency. Phase 4."""
+"""Blocking deterministic accuracy verification."""
+
+from .gate import GateResult, verify
+
+__all__ = ["GateResult", "verify"]

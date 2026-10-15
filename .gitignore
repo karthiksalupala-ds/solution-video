@@ -10,3 +10,4 @@ dist/
 build/
 # Keep local prompt documentation out of GitHub
 /docs/
+/solution-video-phase2-renders/

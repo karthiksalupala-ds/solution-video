@@ -5,13 +5,14 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
 OptionId = Literal["A", "B", "C", "D"]
 
 
 class Source(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     label: str = Field(min_length=1, max_length=120)
     url: HttpUrl | None = None
     verified: Literal[True]
@@ -20,6 +21,7 @@ class Source(BaseModel):
 class QuestionInput(BaseModel):
     """The authoritative daily-question payload, independent of rendering."""
 
+    model_config = ConfigDict(extra="forbid")
     day: int = Field(ge=1, le=999)
     topic: str = Field(min_length=1, max_length=80)
     question: str = Field(min_length=1, max_length=420)
@@ -57,11 +59,13 @@ class QuestionInput(BaseModel):
 
 
 class VisualSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=48)
     data: dict[str, Any] = Field(default_factory=dict)
 
 
 class StepSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     label: str = Field(min_length=1, max_length=80)
     lines: list[str] = Field(min_length=1, max_length=4)
     speech: str = Field(min_length=1, max_length=600)
@@ -78,12 +82,14 @@ class StepSpec(BaseModel):
 
 
 class AnswerSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     display: str = Field(min_length=1, max_length=100)
     speech: str | None = Field(default=None, max_length=300)
     correct_option: OptionId | None = None
 
 
 class TipSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     display: str = Field(min_length=1, max_length=180)
     speech: str | None = Field(default=None, max_length=400)
 
@@ -91,20 +97,13 @@ class TipSpec(BaseModel):
 class SolutionSpec(BaseModel):
     """A render-ready solution paired with its authoritative question."""
 
+    model_config = ConfigDict(extra="forbid")
     question_input: QuestionInput
     steps: list[StepSpec] = Field(min_length=1, max_length=8)
     answer: AnswerSpec
     tip: TipSpec | None = None
     cta: TipSpec | None = None
     seed: int = Field(default=1, ge=0, le=2**31 - 1)
-
-    @model_validator(mode="after")
-    def answer_matches_question(self) -> "SolutionSpec":
-        if _normalise_answer(self.answer.display) != _normalise_answer(self.question_input.final_answer):
-            raise ValueError("Solution answer.display must equal question_input.final_answer")
-        if self.answer.correct_option and self.answer.correct_option != self.question_input.correct_option:
-            raise ValueError("Solution answer.correct_option must equal question_input.correct_option")
-        return self
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "SolutionSpec":
@@ -132,10 +131,13 @@ class SolutionSpec(BaseModel):
 
 
 class Meta(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     path: str
     duration_s: float = Field(ge=0)
     size_bytes: int = Field(ge=0)
     answer_verified: bool
+    status: Literal["ok", "blocked"] = "ok"
+    reasons: list[str] = Field(default_factory=list)
     voice_provider: str | None = None
     warnings: list[str] = Field(default_factory=list)
 

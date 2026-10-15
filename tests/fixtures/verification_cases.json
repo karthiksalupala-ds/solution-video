@@ -1,0 +1,12 @@
+[
+  {"line": "1 + 1 = 2", "valid": true},
+  {"line": "3 / 4 = 0.75", "valid": true},
+  {"line": "20 / 80 * 100 = 25", "valid": true},
+  {"line": "150 + 250 = 400", "valid": true},
+  {"line": "400 / 20 = 20", "valid": true},
+  {"line": "20 x 18 / 5 = 72", "valid": true},
+  {"line": "2 ** 3 = 8", "valid": true},
+  {"line": "5 - 9 = -4", "valid": true},
+  {"line": "25% = 0.25", "valid": true},
+  {"line": "400 / 20 = 30", "valid": false}
+]

@@ -37,3 +37,14 @@
 
 - FFmpeg remains unavailable locally, so the three MP4 encodes and output-size checks must run in GitHub Actions or an FFmpeg-enabled machine.
 - Long content currently raises a clear layout error rather than automatically splitting one step across multiple scenes; automatic splitting is deferred to motion/layout refinement.
+
+## Phase 4 implementation notes
+
+- `solution-video steps` turns a valid `today.json` into a bound, checked `SolutionSpec`; `render-from-today` only starts rendering after the same gate passes.
+- Groq and Gemini use swappable REST adapters with timeouts, three total attempts (initial plus two retries), strict JSON extraction, and no secret logging. The instruction prompt is checked in at `src/solution_video/llm/prompts/solution_to_steps.md`.
+- The mandatory gate compares generated answer and option to the authoritative input and safely evaluates display equalities. It blocks wrong answers, false arithmetic, missing required fields, and unapproved source fields with exit code 2 and blocked meta JSON.
+
+## Known Phase-4 gaps
+
+- The optional independent second-LLM sanity pass is intentionally disabled until provider reliability and cost are measured.
+- Live Groq validation passes for all three Phase-2 examples. Gemini's initial default was discontinued for this account; its adapter now defaults to the current model Google recommends in the API response, but this account received an HTTP 503 during one live attempt. Keep model defaults configurable in a future package phase.
