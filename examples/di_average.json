@@ -18,8 +18,7 @@
       {
         "label": "Step 1: Total sales",
         "lines": [
-          "120 + 150 + 180 + 210",
-          "= 660"
+          "120 + 150 + 180 + 210 = 660"
         ],
         "speech": "First, mana four quarters sales anni add cheddam. 120 plus 150 plus 180 plus 210, total 660.",
         "visual": "bar_chart"
@@ -27,13 +26,13 @@
       {
         "label": "Step 2: Average",
         "lines": [
-          "660 / 4",
-          "= 165"
+          "660 / 4 = 165"
         ],
         "speech": "Ippudu average kosam total ni 4 tho divide cheyyali. 660 divided by 4 is 165."
       }
     ],
     "tip": "Average = Total / Number of values",
-    "answer": "165"
+    "answer": "165",
+    "answer_speech": "So the average quarterly sales are 165, option A."
   }
 }

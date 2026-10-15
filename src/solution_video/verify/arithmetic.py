@@ -11,6 +11,9 @@ class ArithmeticError(ValueError):
     """The expression uses unsupported or invalid arithmetic."""
 
 
+_RESULT_UNITS = r"\s*(km/h|m/s|work/day|km|m|days?|meters?|metres?|rs|lakh|%)\s*$"
+
+
 def _value(node: ast.AST) -> Decimal:
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
         return Decimal(str(node.value))
@@ -40,8 +43,39 @@ def _evaluate_clean(expression: str) -> Decimal:
         raise ArithmeticError("invalid arithmetic") from exc
 
 
+def _strip_result_unit(expression: str) -> str:
+    return re.sub(_RESULT_UNITS, "", expression, flags=re.I)
+
+
 def evaluate(expression: str) -> Decimal:
     return _evaluate_clean(expression)
+
+
+def equation_result(line: str) -> Decimal | None:
+    """Return the verified right-hand result, or None for non-equations."""
+    if verify_line(line) is not True:
+        return None
+    _, right = (part.strip() for part in line.split("=", 1))
+    try:
+        return _evaluate_clean(_strip_result_unit(right))
+    except ArithmeticError:
+        return None
+
+
+def numeric_answer(value: str) -> Decimal | None:
+    """Extract a numeric answer while ignoring its display unit or percent sign."""
+    cleaned = value.replace(",", "").strip()
+    match = re.match(
+        r"^(?:rs\.?|₹|\$)?\s*([+-]?\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)",
+        cleaned,
+        flags=re.I,
+    )
+    if not match:
+        return None
+    try:
+        return _evaluate_clean(match.group(1))
+    except ArithmeticError:
+        return None
 
 
 def verify_line(line: str) -> bool | None:
@@ -49,9 +83,7 @@ def verify_line(line: str) -> bool | None:
     if line.count("=") != 1:
         return None
     left, right = (part.strip() for part in line.split("=", 1))
-    # Remove display-only units only at the end of an expression.
-    left = re.sub(r"\s*(km/h|m/s|days?|meters?|metres?|rs|lakh)\s*$", "", left, flags=re.I)
-    right = re.sub(r"\s*(km/h|m/s|days?|meters?|metres?|rs|lakh)\s*$", "", right, flags=re.I)
+    right = _strip_result_unit(right)
     try:
         return abs(evaluate(left) - evaluate(right)) <= Decimal("0.000001")
     except ArithmeticError:

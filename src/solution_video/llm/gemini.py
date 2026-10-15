@@ -6,7 +6,7 @@ import os
 
 import requests
 
-from .base import JsonProvider, LLMError
+from .base import JsonProvider, LLMError, RateLimitError, retry_after_seconds
 
 
 class GeminiProvider(JsonProvider):
@@ -23,6 +23,12 @@ class GeminiProvider(JsonProvider):
             response.raise_for_status()
         except requests.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else "unknown"
+            if status == 429:
+                headers = exc.response.headers if exc.response is not None else {}
+                raise RateLimitError(
+                    "Gemini request was rate limited (HTTP 429)",
+                    retry_after_seconds(headers.get("Retry-After")),
+                ) from exc
             raise LLMError(f"Gemini request failed (HTTP {status})") from exc
         except requests.RequestException as exc:
             raise LLMError("Gemini request failed") from exc

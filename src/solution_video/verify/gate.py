@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from ..schema import QuestionInput, SolutionSpec
 from .answers import answers_match
-from .arithmetic import verify_line
+from .arithmetic import equation_result, numeric_answer, verify_line
 
 
 @dataclass(frozen=True)
@@ -24,11 +25,32 @@ def verify(question: QuestionInput, spec: SolutionSpec) -> GateResult:
         reasons.append("correct_option does not match final_answer")
     if spec.answer.correct_option and spec.answer.correct_option != question.correct_option:
         reasons.append("Generated correct_option differs from input")
+    if not spec.answer.speech.strip():
+        reasons.append("Generated answer is missing spoken narration")
+    expected_result = numeric_answer(question.final_answer)
+    evaluated_results = []
     for step_index, step in enumerate(spec.steps, 1):
         if step.visual and step.visual.name and step.visual.data.get("source"):
             reasons.append(f"Step {step_index} contains unapproved source data")
+        step_results = []
         for line_index, line in enumerate(step.lines, 1):
             valid = verify_line(line)
             if valid is False:
                 reasons.append(f"Step {step_index} line {line_index} arithmetic is false: {line}")
+            elif valid is True:
+                result = equation_result(line)
+                if result is not None:
+                    step_results.append(result)
+        if not step_results:
+            reasons.append(f"Step {step_index} has no machine-evaluable arithmetic equality")
+        evaluated_results.extend(step_results)
+    if expected_result is None:
+        reasons.append("final_answer has no supported numeric value")
+    if not evaluated_results:
+        reasons.append("Steps contain no machine-evaluable arithmetic equality")
+    elif expected_result is not None and abs(evaluated_results[-1] - expected_result) > Decimal("0.000001"):
+        reasons.append(
+            f"Last evaluated step result {evaluated_results[-1]} does not match "
+            f"numeric final_answer {expected_result}"
+        )
     return GateResult(not reasons, tuple(reasons))

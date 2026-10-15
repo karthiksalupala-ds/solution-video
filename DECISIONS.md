@@ -48,3 +48,6 @@
 
 - The optional independent second-LLM sanity pass is intentionally disabled until provider reliability and cost are measured.
 - Live Groq validation passes for all three Phase-2 examples. Gemini's initial default was discontinued for this account; its adapter now defaults to the current model Google recommends in the API response, but this account received an HTTP 503 during one live attempt. Keep model defaults configurable in a future package phase.
+- Groq model selection uses `GROQ_MODEL`, defaulting to `openai/gpt-oss-20b`; an explicitly passed model takes precedence.
+- Phase 4 blocks generated solutions unless their checked step equations include a machine-evaluable result matching the numeric final answer; answer narration is required.
+- LLM generation uses at most three HTTP attempts total per input, honors 429 Retry-After with capped exponential backoff, and allows at most two schema/accuracy repairs. Only gate-passing specs are cached by normalized question-input hash under ignored `out/.solution-video-cache/`.

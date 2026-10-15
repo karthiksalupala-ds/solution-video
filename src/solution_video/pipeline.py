@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import re
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -14,7 +18,8 @@ from .engine.encode import encode_frames
 from .engine.theme import Theme, load_theme
 from .schema import Meta, SolutionSpec
 from .schema import QuestionInput
-from .llm import JsonProvider, prompt_for_question
+from .llm import JsonProvider, LLMError, RateLimitError, prompt_for_question
+from .llm.base import rate_limit_delay
 from .verify import verify
 from .scenes import AnswerScene, OutroScene, QuestionScene, StepScene, TipScene, TitleScene
 from .scenes.hello import HelloScene, HelloSpec
@@ -91,27 +96,123 @@ def render_from_file(input_path: Path, output_path: Path, *, theme_path: str | P
     return render(SolutionSpec.from_payload(payload), load_theme(Path(theme_path) if theme_path else None), output_path)
 
 
-def generate_steps(question: QuestionInput, provider: JsonProvider) -> SolutionSpec:
+def generate_steps(
+    question: QuestionInput,
+    provider: JsonProvider,
+    *,
+    cache_dir: Path | None = None,
+) -> SolutionSpec:
     """Ask a provider for steps and bind them to the authoritative question."""
-    prompt = prompt_for_question(question.model_dump(mode="json"))
+    question_payload = question.model_dump(mode="json")
+    prompt = prompt_for_question(question_payload)
     schema = SolutionSpec.model_json_schema()
-    for attempt in range(3):
-        payload = provider.generate_json(prompt, schema)
-        payload["question_input"] = question.model_dump(mode="json")
+    cache_path = _steps_cache_path(question_payload, cache_dir) if cache_dir else None
+    if cache_path and cache_path.exists():
+        try:
+            cached = SolutionSpec.model_validate_json(cache_path.read_text(encoding="utf-8"))
+        except (OSError, ValidationError) as exc:
+            raise ValueError(f"Cached generated steps are invalid: {cache_path}") from exc
+        gate = verify(question, cached)
+        if not gate.passed:
+            raise ValueError(f"Cached generated steps failed verification: {'; '.join(gate.reasons)}")
+        return cached
+
+    api_attempts = 0
+    repairs = 0
+    rate_limit_retries = 0
+    while api_attempts < 3:
+        api_attempts += 1
+        try:
+            payload = provider.generate_json(prompt, schema)
+        except RateLimitError as exc:
+            if api_attempts == 3:
+                raise LLMError(
+                    f"Rate limit persisted after {api_attempts} attempts: {exc}"
+                ) from exc
+            time.sleep(rate_limit_delay(rate_limit_retries, exc.retry_after_s))
+            rate_limit_retries += 1
+            continue
+        raw_payload = payload.copy()
+        payload["question_input"] = question_payload
         try:
             spec = SolutionSpec.model_validate(payload)
         except ValidationError as exc:
-            if attempt == 2:
-                raise ValueError("Generated steps did not match the required schema") from exc
-            prompt = f"{prompt}\n\nYour previous JSON failed schema validation: {exc}. Return a corrected JSON object only."
+            _report_schema_failure(exc, raw_payload)
+            if repairs == 2:
+                raise ValueError(f"Generated steps failed schema validation after 2 repairs: {exc}") from exc
+            if api_attempts == 3:
+                raise ValueError(f"Generated steps exhausted {api_attempts} API attempts on schema validation: {exc}") from exc
+            repairs += 1
+            prompt = (
+                f"{prompt}\n\nYour previous JSON failed schema validation. "
+                f"Return a corrected JSON object only. Exact validation error:\n{exc}"
+            )
+            time.sleep(1.0)
             continue
         gate = verify(question, spec)
         if gate.passed:
+            if cache_path:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_text(spec.model_dump_json(indent=2), encoding="utf-8")
             return spec
-        if attempt == 2:
-            raise ValueError("Accuracy gate blocked generated steps: " + "; ".join(gate.reasons))
+        if repairs == 2 or api_attempts == 3:
+            raise ValueError("Accuracy gate blocked generated steps after 2 repairs: " + "; ".join(gate.reasons))
+        repairs += 1
         prompt = f"{prompt}\n\nYour previous JSON failed the accuracy gate: {'; '.join(gate.reasons)}. Return corrected JSON only."
+        time.sleep(1.0)
     raise AssertionError("unreachable")
+
+
+def _steps_cache_path(question_payload: dict[str, Any], cache_dir: Path) -> Path:
+    """Build the stable cache path for the normalized authoritative input."""
+    encoded = json.dumps(question_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    digest = hashlib.sha256(encoded).hexdigest()
+    return cache_dir / f"{digest}.json"
+
+
+def _report_schema_failure(error: ValidationError, payload: dict[str, Any]) -> None:
+    """Report only invalid model fields, redacting secret-shaped values."""
+    field_values = []
+    for issue in error.errors(include_url=False):
+        location = issue["loc"]
+        value = payload
+        for part in location:
+            try:
+                value = value[part]
+            except (KeyError, IndexError, TypeError):
+                value = "<missing>"
+                break
+        field_values.append({
+            "field": ".".join(str(part) for part in location) or "<root>",
+            "value": _redact_sensitive_values(value),
+        })
+    details = json.dumps(field_values, ensure_ascii=False, default=str)
+    diagnostic = f"Generated response schema validation failed:\n{error}\nFailed raw output fields: {details}"
+    diagnostic = re.sub(
+        r"(?i)\b(gsk_[A-Za-z0-9]{8,}|AIza[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9_-]{16,})\b",
+        "[REDACTED]",
+        diagnostic,
+    )
+    diagnostic = re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/-]+", r"\1[REDACTED]", diagnostic)
+    print(diagnostic, file=sys.stderr)
+
+
+def _redact_sensitive_values(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if re.search(r"(?i)(key|token|secret|password)", str(key)) else _redact_sensitive_values(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_sensitive_values(item) for item in value]
+    if isinstance(value, str):
+        value = re.sub(
+            r"(?i)\b(gsk_[A-Za-z0-9]{8,}|AIza[A-Za-z0-9_-]{20,}|hf_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9_-]{16,})\b",
+            "[REDACTED]",
+            value,
+        )
+        return re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/-]+", r"\1[REDACTED]", value)
+    return value
 
 
 def render_hello(input_path: Path, output_path: Path, *, theme_path: str | Path | None = None) -> Meta:

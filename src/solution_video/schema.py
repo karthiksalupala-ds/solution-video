@@ -84,7 +84,7 @@ class StepSpec(BaseModel):
 class AnswerSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     display: str = Field(min_length=1, max_length=100)
-    speech: str | None = Field(default=None, max_length=300)
+    speech: str = Field(min_length=1, max_length=300)
     correct_option: OptionId | None = None
 
 
@@ -124,7 +124,11 @@ class SolutionSpec(BaseModel):
         return cls.model_validate({
             "question_input": question_fields,
             "steps": steps,
-            "answer": {"display": answer, "correct_option": payload.get("correct_option")},
+            "answer": {
+                "display": answer,
+                "speech": expected.get("answer_speech", ""),
+                "correct_option": payload.get("correct_option"),
+            },
             "tip": {"display": expected["tip"]} if expected.get("tip") else None,
             "seed": payload.get("day", 1),
         })

@@ -6,12 +6,44 @@ import json
 import re
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 from pathlib import Path
 
 
 class LLMError(RuntimeError):
     """A provider, response-format, or retry failure."""
+
+
+class RateLimitError(LLMError):
+    """A provider rate-limit response, optionally carrying Retry-After seconds."""
+
+    def __init__(self, message: str, retry_after_s: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_s = retry_after_s
+
+
+def retry_after_seconds(value: str | None) -> float | None:
+    """Parse Retry-After as seconds or an HTTP date."""
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+
+def rate_limit_delay(attempt: int, retry_after_s: float | None) -> float:
+    """Use a capped exponential delay without retrying before Retry-After."""
+    exponential_delay = min(30.0, 1.0 * (2**attempt))
+    return max(exponential_delay, retry_after_s or 0.0)
 
 
 def extract_json(text: str) -> dict[str, Any]:
@@ -33,19 +65,12 @@ class JsonProvider(ABC):
     def complete(self, prompt: str) -> str: ...
 
     def generate_json(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-        last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                payload = extract_json(self.complete(prompt))
-                # Schema is carried to providers and callers; model validation remains authoritative.
-                if not isinstance(schema, dict):
-                    raise LLMError("Invalid requested response schema")
-                return payload
-            except (LLMError, OSError) as exc:
-                last_error = exc
-                if attempt < 2:
-                    time.sleep(0.5 * (2**attempt))
-        raise LLMError(f"Generation failed after 3 attempts: {last_error}")
+        if not isinstance(schema, dict):
+            raise LLMError("Invalid requested response schema")
+        try:
+            return extract_json(self.complete(prompt))
+        except OSError as exc:
+            raise LLMError("Provider request failed") from exc
 
 
 def prompt_for_question(question: dict[str, Any]) -> str:

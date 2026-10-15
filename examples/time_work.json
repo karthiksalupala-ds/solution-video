@@ -18,30 +18,30 @@
       {
         "label": "Step 1: One day work",
         "lines": [
-          "A = 1/12",
-          "B = 1/24"
+          "1 / 12 = 1/12 work/day",
+          "1 / 24 = 1/24 work/day"
         ],
         "speech": "A oka roju lo 1 by 12 work chestadu, B oka roju lo 1 by 24 work chestadu."
       },
       {
         "label": "Step 2: Together",
         "lines": [
-          "1/12 + 1/24",
-          "= 2/24 + 1/24",
-          "= 3/24 = 1/8"
+          "1/12 + 1/24 = 2/24 + 1/24",
+          "1/12 + 1/24 = 3/24",
+          "1/12 + 1/24 = 1/8"
         ],
         "speech": "Rendu add cheste, 2 by 24 plus 1 by 24, ante 3 by 24, simplify cheste 1 by 8."
       },
       {
         "label": "Step 3: Days",
         "lines": [
-          "1 / (1/8)",
-          "= 8 days"
+          "1 / (1/8) = 8 days"
         ],
         "speech": "Oka roju lo 1 by 8 work aite, motham work 8 rojullo aipothundhi."
       }
     ],
     "tip": "Together rate = sum of individual rates",
-    "answer": "8 days"
+    "answer": "8 days",
+    "answer_speech": "So they will finish the work in 8 days, option B."
   }
 }

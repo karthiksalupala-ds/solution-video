@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
             payload.pop("expected_steps", None)
             question = QuestionInput.model_validate(payload)
             provider = GroqProvider() if args.provider == "groq" else GeminiProvider()
-            spec = generate_steps(question, provider)
+            spec = generate_steps(question, provider, cache_dir=Path("out/.solution-video-cache"))
         except LLMError as exc:
             print(f"LLM failed: {exc}", file=sys.stderr)
             return 3
@@ -83,7 +83,7 @@ def _load_local_env() -> None:
         if "=" not in line or line.lstrip().startswith("#"):
             continue
         key, value = line.split("=", 1)
-        if key in {"GROQ_API_KEY", "GEMINI_API_KEY"} and not os.getenv(key):
+        if key in {"GROQ_API_KEY", "GROQ_MODEL", "GEMINI_API_KEY"} and not os.getenv(key):
             os.environ[key] = value.strip()
 
 

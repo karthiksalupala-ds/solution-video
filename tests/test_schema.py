@@ -19,3 +19,13 @@ def test_checked_in_examples_normalise_to_solution_specs():
 def test_wrong_correct_option_is_rejected():
     with pytest.raises(ValidationError, match="correct_option"):
         QuestionInput(day=1, topic="T", question="Q", options=["1", "2", "3", "4"], correct_option="A", final_answer="2")
+
+
+def test_answer_speech_is_required():
+    path = ROOT / "examples" / "speed_train.json"
+    spec = SolutionSpec.from_payload(json.loads(path.read_text(encoding="utf-8")))
+    payload = spec.model_dump(mode="python")
+    payload["answer"].pop("speech")
+
+    with pytest.raises(ValidationError, match="speech"):
+        SolutionSpec.model_validate(payload)
