@@ -54,3 +54,5 @@
 - Phase 6 uses package data-files for repository themes/fonts so checkout and standard venv installations resolve the same assets. v0.1.0 exposes `Meta`, `render`, and `render_from_today`; speech synthesis remains deferred, so non-`--no-voice` renders explicitly report that only sound effects were produced.
 - Rendered videos are validated with ffprobe against the fixed delivery contract. Oversized output receives one lower-bitrate H.264/AAC re-encode; invalid streams or a still-oversized result fail output validation.
 - Apache-2.0 selected for the package. Release tag `v0.1.0` must be created against a release commit containing the package changes, not the pre-existing dirty workspace HEAD.
+
+Prompt packs 05 and 07 in docs/prompts are superseded by prompts_one_by_one/1-4. Follow only the prompt I paste in the session.
