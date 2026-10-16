@@ -6,7 +6,7 @@
 - Core = Python library + CLI first. MCP/HTTP wrapper later, only after 2+ real consumers exist.
 - Bot integration: the 6 PM GitHub Actions job renders then sends with Green API `sendFileByUpload`; any failure falls back to the existing text solution.
 - Output: MP4, H.264 + AAC, 720x1280, 30 fps, no more than 16 MB.
-- Voice language is Tanglish; the exact script format is decided after the Phase 5 listening test.
+- Initial video narration language is English, based on the Phase 5 listening test; Telugu and Tanglish samples are retained only as exploratory comparisons.
 - Never invent company/source names. The accuracy gate blocks unverifiable answers.
 - MVP order is phases 1, 2, 4, 6, and 7 with `--no-voice`; then motion polish, voice, and review.
 - Rendering is Pillow-first with cached 720p layers and selective 2x supersampling. HTML/CSS is a future isolated fallback, not the default path.
@@ -56,3 +56,10 @@
 - Apache-2.0 selected for the package. Release tag `v0.1.0` must be created against a release commit containing the package changes, not the pre-existing dirty workspace HEAD.
 
 Prompt packs 05 and 07 in docs/prompts are superseded by prompts_one_by_one/1-4. Follow only the prompt I paste in the session.
+
+- Phase 5 listening test keeps approved narration variants in JSON and provider adapters separate from video rendering. HF requests use the inspected `generate_tts_audio` endpoint and an explicit user-owned reference clip at `local_assets/ref_voice.wav` by default; `local_assets/` is Git-ignored. ElevenLabs synthesis needs separate credit approval and is capped at 1,500 estimated credits. If Telugu is revisited, use ElevenLabs `eleven_v4`, whose current docs list Telugu support, after selecting a suitable voice and confirming account access.
+- Phase 4.1 selects English speech via `SPEECH_LANGUAGE_MODE`; generated step, tip, and answer narration follows that same mode, and the mode participates in the successful-steps cache key. Future voice-provider priority is ElevenLabs, Edge TTS, then HF Space. Voice synthesis implementation is unchanged.
+- Phase 4.1 grounding requires the first evaluable step's operands to occur in the question or be recognized standard constants, rejects literal tautology/filler equations, and requires the final evaluated result to match the numeric answer. Individual work rates and data components must be calculated before combination.
+- Phase 4.1 live Groq reruns did not return model JSON: both examples received HTTP 400 during Groq JSON-output validation; the error response provided no failed-generation detail. Do not claim a gate pass until live output is available.
+- Phase 4.1.1 controlled Groq comparison isolated the HTTP 400 to JSON mode with the current prompt, not the model: `openai/gpt-oss-20b` accepted the v0.1.0 prompt, rejected the current prompt with `json_validate_failed`, then returned valid, gate-passing speed-train JSON with `response_format` disabled. Keep that model as default. The adapter retries JSON-validation errors once without JSON mode, forwards provider failed-generation details into the repair prompt, and caps completions at 4,096 tokens while detecting length truncation. The four-live-request budget is tracked across comparisons and post-fix examples.
+- Within that four-request budget, the post-fix speed_train response passed schema and accuracy verification. The single post-fix time_work response was correctly blocked: the model rounded 1/12 and 1/24 to 0.0833 and 0.0417, making its displayed equalities false. No retries remained within the authorized live-call cap. Neither fixture was modified.

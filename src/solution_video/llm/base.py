@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import Any, Literal
 from pathlib import Path
 
 
@@ -22,6 +23,43 @@ class RateLimitError(LLMError):
     def __init__(self, message: str, retry_after_s: float | None = None) -> None:
         super().__init__(message)
         self.retry_after_s = retry_after_s
+
+
+class JsonModeValidationError(LLMError):
+    """Groq JSON mode rejected a generated response and can be retried once."""
+
+    def __init__(self, message: str, failed_generation: str | None, fallback_available: bool) -> None:
+        super().__init__(message)
+        self.failed_generation = failed_generation
+        self.fallback_available = fallback_available
+
+
+class JsonParseError(LLMError):
+    """The provider response was not a JSON object after fence stripping."""
+
+    def __init__(self, message: str, response_text: str) -> None:
+        super().__init__(message)
+        self.response_text = response_text
+
+
+SpeechLanguageMode = Literal["english", "tanglish_latin", "telugu_script", "mixed"]
+SPEECH_LANGUAGE_MODES = ("english", "tanglish_latin", "telugu_script", "mixed")
+
+
+def resolve_speech_language_mode(mode: str | None = None) -> SpeechLanguageMode:
+    """Resolve the configured narration mode and reject unsupported values."""
+    selected = os.getenv("SPEECH_LANGUAGE_MODE", "english") if mode is None else mode
+    if selected == "english":
+        return "english"
+    if selected == "tanglish_latin":
+        return "tanglish_latin"
+    if selected == "telugu_script":
+        return "telugu_script"
+    if selected == "mixed":
+        return "mixed"
+    raise ValueError(
+        "SPEECH_LANGUAGE_MODE must be one of: " + ", ".join(SPEECH_LANGUAGE_MODES)
+    )
 
 
 def retry_after_seconds(value: str | None) -> float | None:
@@ -52,7 +90,7 @@ def extract_json(text: str) -> dict[str, Any]:
     try:
         value = json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        raise LLMError("Provider returned invalid JSON") from exc
+        raise JsonParseError("Provider returned invalid JSON", text) from exc
     if not isinstance(value, dict):
         raise LLMError("Provider JSON response must be an object")
     return value
@@ -73,11 +111,32 @@ class JsonProvider(ABC):
             raise LLMError("Provider request failed") from exc
 
 
-def prompt_for_question(question: dict[str, Any]) -> str:
+def prompt_for_question(
+    question: dict[str, Any],
+    speech_language_mode: str | None = None,
+) -> str:
     """Load the prompt from disk and append caller-owned question data."""
     prompt_path = Path(__file__).with_name("prompts") / "solution_to_steps.md"
     try:
         instructions = prompt_path.read_text(encoding="utf-8")
     except OSError as exc:
         raise LLMError("Solution-to-steps prompt file is missing") from exc
-    return f"{instructions}\n\nINPUT JSON:\n{json.dumps(question, ensure_ascii=False)}"
+    mode = resolve_speech_language_mode(speech_language_mode)
+    mode_instructions = {
+        "english": "Use natural English only; do not insert Telugu or Tanglish.",
+        "tanglish_latin": "Use conversational Telugu written in Latin script, retaining technical English terms naturally.",
+        "telugu_script": "Use natural Telugu written in Telugu script, retaining standard technical terms as needed.",
+        "mixed": "Use Telugu in Telugu script, but keep technical English terms in Latin script.",
+    }
+    return (
+        f"{instructions}\n\n"
+        "SPEECH LANGUAGE CONFIGURATION\n"
+        f"Mode: {mode}\n"
+        f"{mode_instructions[mode]}\n"
+        "Apply this mode consistently to every steps[*].speech, tip.speech, "
+        "answer.speech, and any outro/CTA speech. Keep all display text separate "
+        "from speech. Spell numbers in speakable words in the selected mode; "
+        "say x as times, / as divided by, % as percent, and km/h as kilometres "
+        "per hour. Do not read raw calculation symbols aloud.\n\n"
+        f"INPUT JSON:\n{json.dumps(question, ensure_ascii=False)}"
+    )

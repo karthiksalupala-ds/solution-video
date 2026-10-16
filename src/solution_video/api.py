@@ -37,6 +37,7 @@ def render_from_today(
     theme_path: str | Path | None = None,
     no_voice: bool = False,
     seed: int | None = None,
+    speech_language_mode: str | None = None,
 ) -> Meta:
     """Generate verified steps for a today-question JSON file, then render it."""
     try:
@@ -53,7 +54,7 @@ def render_from_today(
         llm = GeminiProvider()
     else:
         raise ValueError("provider must be 'groq' or 'gemini'")
-    spec = generate_steps(question, llm)
+    spec = generate_steps(question, llm, speech_language_mode=speech_language_mode)
     if seed is not None:
         if not 0 <= seed <= 2**31 - 1:
             raise ValueError("seed must be between 0 and 2147483647")

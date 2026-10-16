@@ -15,9 +15,16 @@ from .engine.encode import EncodeError
 from .engine.output import OutputValidationError
 from .engine.theme import Theme, load_theme
 from .llm import GeminiProvider, GroqProvider, LLMError
+from .llm.base import SPEECH_LANGUAGE_MODES
 from .pipeline import generate_steps, plan_scenes, render, render_from_file
 from .schema import QuestionInput, SolutionSpec
 from .verify import verify
+from .voice.listening_test import (
+    EDGE_VOICES,
+    VoiceTestError,
+    load_text_variants,
+    run_listening_test,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -39,25 +46,55 @@ def main(argv: list[str] | None = None) -> int:
     steps_parser.add_argument("--out", required=True, type=Path)
     steps_parser.add_argument("--provider", choices=("groq", "gemini"), default="groq")
     steps_parser.add_argument("--seed", type=_seed)
+    steps_parser.add_argument("--speech-language-mode", choices=SPEECH_LANGUAGE_MODES)
 
     today_parser = sub.add_parser("render-from-today", help="Generate, verify, then render today.json")
     today_parser.add_argument("--input", required=True, type=Path)
     today_parser.add_argument("--out", required=True, type=Path)
     today_parser.add_argument("--provider", choices=("groq", "gemini"), default="groq")
+    today_parser.add_argument("--speech-language-mode", choices=SPEECH_LANGUAGE_MODES)
     _add_render_options(today_parser)
 
     validate_parser = sub.add_parser("validate", help="Validate a question or render-ready solution JSON")
     validate_parser.add_argument("--input", required=True, type=Path)
 
-    sub.add_parser("voice-test", help="Report speech-synthesis support available in this release")
+    voice_parser = sub.add_parser("voice-test", help="Compare approved narration samples with TTS providers")
+    voice_parser.add_argument("--input", type=Path, default=Path("examples/speed_train.json"))
+    voice_parser.add_argument("--variants", type=Path, default=Path("examples/voice_tests/approved_variants.json"))
+    voice_parser.add_argument("--out", type=Path, default=Path("examples/voice_tests"))
+    voice_parser.add_argument(
+        "--provider",
+        choices=("all", "hf_space", "elevenlabs", "edge_tts"),
+        default="all",
+    )
+    voice_parser.add_argument("--elevenlabs-voice-id")
+    voice_parser.add_argument("--approve-elevenlabs-credits", type=int)
+    voice_parser.add_argument("--synthesize", action="store_true", help="Make provider requests and write audio")
+    voice_parser.add_argument("--approve-texts", action="store_true", help="Confirm that the test text was reviewed")
     args = parser.parse_args(argv)
 
     if args.command is None:
         parser.print_help()
         return 0
     if args.command == "voice-test":
-        print("Speech synthesis is not integrated in v0.1.0; generated MP4s contain sound effects only.")
-        return 4
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        _load_local_env()
+        try:
+            variants = load_text_variants(args.variants, args.input)
+            providers = {"hf_space", "elevenlabs", "edge_tts"} if args.provider == "all" else {args.provider}
+            return run_listening_test(
+                variants,
+                args.out,
+                providers,
+                synthesize=args.synthesize,
+                text_approved=args.approve_texts,
+                elevenlabs_voice_id=args.elevenlabs_voice_id,
+                approved_elevenlabs_credits=args.approve_elevenlabs_credits,
+            )
+        except VoiceTestError as exc:
+            print(f"Voice test failed: {exc}", file=sys.stderr)
+            return 4
     if args.command == "validate":
         return _validate_input(args.input)
 
@@ -65,7 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     render_started = False
     try:
         if args.command == "steps":
-            spec = _generate_from_today(args.input, args.provider, args.seed)
+            spec = _generate_from_today(
+                args.input, args.provider, args.seed, args.speech_language_mode
+            )
             args.out.parent.mkdir(parents=True, exist_ok=True)
             args.out.write_text(spec.model_dump_json(indent=2), encoding="utf-8")
             print(f"Wrote verified steps to {args.out}")
@@ -86,7 +125,9 @@ def main(argv: list[str] | None = None) -> int:
                 no_voice=args.no_voice,
             )
         else:
-            spec = _generate_from_today(args.input, args.provider, args.seed)
+            spec = _generate_from_today(
+                args.input, args.provider, args.seed, args.speech_language_mode
+            )
             render_started = True
             if args.dry_run:
                 _print_plan(spec, load_theme(args.theme))
@@ -149,7 +190,12 @@ def _load_render_spec(input_path: Path) -> SolutionSpec:
     return SolutionSpec.from_payload(payload)
 
 
-def _generate_from_today(input_path: Path, provider_name: str, seed: int | None) -> SolutionSpec:
+def _generate_from_today(
+    input_path: Path,
+    provider_name: str,
+    seed: int | None,
+    speech_language_mode: str | None = None,
+) -> SolutionSpec:
     try:
         payload = json.loads(input_path.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -159,7 +205,12 @@ def _generate_from_today(input_path: Path, provider_name: str, seed: int | None)
     payload.pop("expected_steps", None)
     question = QuestionInput.model_validate(payload)
     provider = GroqProvider() if provider_name == "groq" else GeminiProvider()
-    spec = generate_steps(question, provider, cache_dir=Path("out/.solution-video-cache"))
+    spec = generate_steps(
+        question,
+        provider,
+        cache_dir=Path("out/.solution-video-cache"),
+        speech_language_mode=speech_language_mode,
+    )
     _apply_seed(spec, seed)
     return spec
 
@@ -220,8 +271,18 @@ def _load_local_env() -> None:
         if "=" not in line or line.lstrip().startswith("#"):
             continue
         key, value = line.split("=", 1)
-        if key in {"GROQ_API_KEY", "GROQ_MODEL", "GEMINI_API_KEY"} and not os.getenv(key):
-            os.environ[key] = value.strip()
+        value = value.strip().strip("\"'").strip()
+        if key in {
+            "GROQ_API_KEY",
+            "GROQ_MODEL",
+            "GEMINI_API_KEY",
+            "SPEECH_LANGUAGE_MODE",
+            "HF_TOKEN",
+            "HF_TTS_SPACE",
+            "HF_TTS_REFERENCE_AUDIO",
+            "ELEVENLABS_API_KEY",
+        } and not os.getenv(key) and value:
+            os.environ[key] = value
 
 
 if __name__ == "__main__":

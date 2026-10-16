@@ -2,8 +2,11 @@ __pycache__/
 *.pyc
 .venv/
 .env
+local_assets/*
+!local_assets/README.md
 out/
 *.wav
+examples/voice_tests/*.mp3
 .pytest_cache/
 *.egg-info/
 dist/

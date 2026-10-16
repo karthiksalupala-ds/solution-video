@@ -62,6 +62,38 @@ def equation_result(line: str) -> Decimal | None:
         return None
 
 
+def equation_operands(line: str) -> tuple[Decimal, ...] | None:
+    """Return numeric operands from the left side of a valid equality."""
+    if line.count("=") != 1 or verify_line(line) is not True:
+        return None
+    left = line.split("=", 1)[0].strip()
+    sanitized = left.replace("\u00d7", "*").replace("\u00f7", "/")
+    sanitized = re.sub(r"(?<=\d)\s*[xX]\s*(?=\d)", "*", sanitized)
+    try:
+        expression = ast.parse(sanitized, mode="eval").body
+    except SyntaxError:
+        return None
+    operands: list[Decimal] = []
+    for node in ast.walk(expression):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            operands.append(Decimal(str(node.value)))
+    return tuple(operands)
+
+
+def equation_has_computation(line: str) -> bool:
+    """Return whether the left side performs an arithmetic operation."""
+    if line.count("=") != 1:
+        return False
+    left = line.split("=", 1)[0].strip()
+    sanitized = left.replace("\u00d7", "*").replace("\u00f7", "/")
+    sanitized = re.sub(r"(?<=\d)\s*[xX]\s*(?=\d)", "*", sanitized)
+    try:
+        expression = ast.parse(sanitized, mode="eval").body
+    except SyntaxError:
+        return False
+    return any(isinstance(node, ast.BinOp) for node in ast.walk(expression))
+
+
 def numeric_answer(value: str) -> Decimal | None:
     """Extract a numeric answer while ignoring its display unit or percent sign."""
     cleaned = value.replace(",", "").strip()

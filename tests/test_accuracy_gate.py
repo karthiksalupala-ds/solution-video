@@ -73,6 +73,39 @@ def test_gate_requires_an_evaluable_equation_in_each_step():
     assert any("Step 2 has no machine-evaluable arithmetic equality" in reason for reason in result.reasons)
 
 
+def test_gate_blocks_equation_with_ungrounded_operands():
+    spec = _spec()
+    first_step = spec.steps[0].model_copy(update={"lines": ["10 + 62 = 72"]})
+    altered = spec.model_copy(update={
+        "steps": [first_step, *spec.steps[1:]],
+    })
+
+    result = verify(spec.question_input, altered)
+
+    assert not result.passed
+    assert any("operands absent from the question" in reason for reason in result.reasons)
+
+
+def test_gate_blocks_tautology_filler_equation():
+    spec = _spec()
+    first_step = spec.steps[0].model_copy(update={"lines": ["165 = 165"]})
+    altered = spec.model_copy(update={
+        "steps": [first_step, *spec.steps[1:]],
+    })
+
+    result = verify(spec.question_input, altered)
+
+    assert not result.passed
+    assert any("tautology/filler" in reason for reason in result.reasons)
+
+
+def test_gate_accepts_work_rates_grounded_in_question():
+    payload = json.loads((ROOT / "examples" / "time_work.json").read_text(encoding="utf-8"))
+    spec = SolutionSpec.from_payload(payload)
+
+    assert verify(spec.question_input, spec).passed
+
+
 class _MockProvider(JsonProvider):
     def __init__(self, payload: dict | list[dict]):
         self.payloads = payload if isinstance(payload, list) else [payload]
@@ -189,6 +222,70 @@ def test_generator_repairs_schema_once_with_mock_provider(monkeypatch):
         SolutionSpec.model_validate(payload)
 
 
+def test_groq_json_mode_failure_uses_failed_generation_in_repair_prompt(monkeypatch):
+    import solution_video.pipeline as pipeline
+    from solution_video.llm.base import JsonModeValidationError
+
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _delay: None)
+    spec = _spec()
+    valid_payload = spec.model_dump(mode="json")
+    valid_payload.pop("question_input")
+
+    class _FallbackProvider(JsonProvider):
+        calls = 0
+        retry_prompt = ""
+
+        def generate_json(self, prompt: str, schema: dict) -> dict:
+            self.calls += 1
+            if self.calls == 1:
+                raise JsonModeValidationError(
+                    "Groq JSON mode validation failed (HTTP 400, code json_validate_failed)",
+                    failed_generation='{"steps":',
+                    fallback_available=True,
+                )
+            self.retry_prompt = prompt
+            return valid_payload
+
+        def complete(self, prompt: str) -> str:
+            raise AssertionError("generate_json override should be used")
+
+    provider = _FallbackProvider()
+    result = generate_steps(spec.question_input, provider)
+
+    assert result.answer.display == "72 km/h"
+    assert provider.calls == 2
+    assert '{"steps":' in provider.retry_prompt
+    assert "Retry without response_format" in provider.retry_prompt
+
+
+def test_json_mode_fallback_respects_shared_three_request_ceiling(monkeypatch):
+    import solution_video.pipeline as pipeline
+    from solution_video.llm.base import JsonModeValidationError, LLMError
+
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _delay: None)
+    spec = _spec()
+
+    class _AlwaysJsonModeInvalid(JsonProvider):
+        calls = 0
+
+        def generate_json(self, prompt: str, schema: dict) -> dict:
+            self.calls += 1
+            raise JsonModeValidationError(
+                "Groq JSON mode validation failed",
+                failed_generation=None,
+                fallback_available=True,
+            )
+
+        def complete(self, prompt: str) -> str:
+            raise AssertionError("generate_json override should be used")
+
+    provider = _AlwaysJsonModeInvalid()
+
+    with pytest.raises(LLMError, match="shared 3-request budget"):
+        generate_steps(spec.question_input, provider)
+    assert provider.calls == 3
+
+
 def test_schema_repair_prompt_contains_exact_validation_error(monkeypatch, capsys):
     import solution_video.pipeline as pipeline
 
@@ -246,6 +343,53 @@ def test_steps_cache_skips_provider_after_success(monkeypatch, tmp_path):
     assert first == second
     assert provider.calls == 1
     assert len(list(cache_dir.glob("*.json"))) == 1
+
+
+def test_steps_cache_is_separated_by_speech_language_mode(monkeypatch, tmp_path):
+    import solution_video.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _delay: None)
+    spec = _spec()
+    payload = spec.model_dump(mode="json")
+    payload.pop("question_input")
+    provider = _MockProvider(payload)
+    cache_dir = tmp_path / "step-cache"
+
+    generate_steps(spec.question_input, provider, cache_dir=cache_dir, speech_language_mode="english")
+    generate_steps(spec.question_input, provider, cache_dir=cache_dir, speech_language_mode="tanglish_latin")
+
+    assert provider.calls == 2
+    assert len(list(cache_dir.glob("*.json"))) == 2
+
+
+def test_speech_language_mode_is_applied_to_all_spoken_fields(monkeypatch):
+    import solution_video.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _delay: None)
+    spec = _spec()
+    payload = spec.model_dump(mode="json")
+    payload.pop("question_input")
+
+    class _PromptProvider(JsonProvider):
+        prompt = ""
+
+        def complete(self, prompt: str) -> str:
+            self.prompt = prompt
+            return json.dumps(payload)
+
+    provider = _PromptProvider()
+    generate_steps(
+        spec.question_input,
+        provider,
+        speech_language_mode="english",
+    )
+
+    assert "Mode: english" in provider.prompt
+    for field in ("steps[*].speech", "tip.speech", "answer.speech"):
+        assert field in provider.prompt
+    assert "Use natural English only" in provider.prompt
+    assert "say x as" in provider.prompt
+    assert "“times”" in provider.prompt
 
 
 def test_schema_repair_stops_after_two_repairs(monkeypatch):

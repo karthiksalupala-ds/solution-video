@@ -43,7 +43,7 @@ solution-video steps --input examples/speed_train.json --out out/steps.json --pr
 solution-video render-from-today --input today.json --out out/today.mp4 --provider groq --no-voice
 ```
 
-`render-from-today` reads `GROQ_API_KEY` or `GEMINI_API_KEY` from the process environment. For local development, an ignored `.env` file is also read by the CLI. Never commit credentials. Set `GROQ_MODEL` to override the Groq model.
+`render-from-today` reads `GROQ_API_KEY` or `GEMINI_API_KEY` from the process environment. For local development, an ignored `.env` file is also read by the CLI. Never commit credentials. Set `GROQ_MODEL` to override the Groq model (`openai/gpt-oss-20b` is the default). If Groq rejects JSON mode with `json_validate_failed`, the adapter retries once without `response_format`; its strict JSON parser and schema/accuracy repair loop still apply, within the shared three-request limit. The adapter requests up to 4,096 completion tokens and treats a length-truncated response as invalid JSON for repair. Set `SPEECH_LANGUAGE_MODE` to `english`, `tanglish_latin`, `telugu_script`, or `mixed` to guide all generated step, tip, and answer narration; `--speech-language-mode` can override it on `steps` and `render-from-today`. The selected mode is part of the generated-step cache key.
 
 ## Python API
 
@@ -79,9 +79,25 @@ The accuracy gate checks the selected option and answer, evaluates arithmetic li
 
 Themes are JSON files in [themes/](themes); pass one with `--theme path/to/theme.json`. Fonts ship with the package. Scene renderers live in `src/solution_video/scenes/`; optional visual plugins live in `src/solution_video/plugins/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the extension guide.
 
-## Voice setup
+## Voice listening test
 
-v0.1.0 does not synthesize narration. `--no-voice` produces a valid MP4 with its sound-effects soundtrack, while `voice-test` exits with code 4 and explains that TTS is not available. Installing the optional `voice` extra alone does not enable TTS; voice support is deferred until its provider/fallback chain is integrated and tested.
+The `voice-test` command is a historical listening comparison using the approved variants in `examples/voice_tests/approved_variants.json` and narration from `examples/speed_train.json`. It previews the text and character/credit estimates without network access. The current preference for video narration is English only; Telugu and Tanglish samples are retained for reference and are not selected for the video voice:
+
+```bash
+solution-video voice-test
+```
+
+After reviewing the text, generate samples from providers whose credentials/assets are configured:
+
+```bash
+solution-video voice-test --provider all --synthesize --approve-texts
+```
+
+The private HF Space uses `HF_TTS_SPACE`, `HF_TOKEN`, and `HF_TTS_REFERENCE_AUDIO` (default `local_assets/ref_voice.wav`). If `local_assets/` is not present, create it in the repository root (next to `.env`) and put your own recording there as `ref_voice.wav`; alternatively, set `HF_TTS_REFERENCE_AUDIO` in `.env` to the recording's path. The folder is ignored by Git, so the recording is not committed. The test passes an explicit reference filepath and never uses the Space's demo default; if the file is absent, the HF part is skipped. The inspected Space endpoint does not request a transcript.
+
+ElevenLabs uses `ELEVENLABS_API_KEY`. The command lists account premade voices first; select one with `--elevenlabs-voice-id`. Synthesis requires a separate explicit credit confirmation equal to or above the printed estimate, for example `--approve-elevenlabs-credits 1200`. The command refuses ElevenLabs generation above 1,500 estimated credits. The existing comparison tested `eleven_v3` and `eleven_multilingual_v2`; no more Telugu/Tanglish generation is planned for the current English-first narration. If Telugu is tested later, ElevenLabs documents Telugu support for `eleven_v4` (a multilingual model, not a Telugu-only model); choose a voice suited to Telugu and confirm the account supports that model before spending credits. Only premade voices are used; no voice cloning is performed. Treat free-tier samples as non-commercial.
+
+The three Edge voices are `te-IN-ShrutiNeural`, `te-IN-MohanNeural`, and `en-IN-NeerjaNeural`. Audio and `INDEX.md` are written to `examples/voice_tests/`. Test-provider network calls are mocked. Voice listening tests do not enable TTS in video rendering; v0.1.0 still renders without narration.
 
 ## Another bot calling the generator
 

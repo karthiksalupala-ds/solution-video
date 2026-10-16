@@ -20,6 +20,12 @@ from .engine.theme import Theme, load_theme
 from .schema import Meta, SolutionSpec
 from .schema import QuestionInput
 from .llm import JsonProvider, LLMError, RateLimitError, prompt_for_question
+from .llm.base import (
+    JsonModeValidationError,
+    JsonParseError,
+    SpeechLanguageMode,
+    resolve_speech_language_mode,
+)
 from .llm.base import rate_limit_delay
 from .verify import verify
 from .scenes import AnswerScene, OutroScene, QuestionScene, StepScene, TipScene, TitleScene
@@ -137,12 +143,14 @@ def generate_steps(
     provider: JsonProvider,
     *,
     cache_dir: Path | None = None,
+    speech_language_mode: str | None = None,
 ) -> SolutionSpec:
     """Ask a provider for steps and bind them to the authoritative question."""
+    mode: SpeechLanguageMode = resolve_speech_language_mode(speech_language_mode)
     question_payload = question.model_dump(mode="json")
-    prompt = prompt_for_question(question_payload)
+    prompt = prompt_for_question(question_payload, mode)
     schema = SolutionSpec.model_json_schema()
-    cache_path = _steps_cache_path(question_payload, cache_dir) if cache_dir else None
+    cache_path = _steps_cache_path(question_payload, mode, cache_dir) if cache_dir else None
     if cache_path and cache_path.exists():
         try:
             cached = SolutionSpec.model_validate_json(cache_path.read_text(encoding="utf-8"))
@@ -160,6 +168,27 @@ def generate_steps(
         api_attempts += 1
         try:
             payload = provider.generate_json(prompt, schema)
+        except JsonModeValidationError as exc:
+            if not exc.fallback_available:
+                raise
+            if repairs == 2 or api_attempts == 3:
+                raise LLMError(
+                    f"Groq JSON-mode fallback exhausted the shared {api_attempts}-request budget: {exc}"
+                ) from exc
+            repairs += 1
+            failed_output = (
+                f"\nGroq failed_generation:\n{exc.failed_generation}"
+                if exc.failed_generation
+                else "\nGroq did not provide a failed_generation value."
+            )
+            prompt = (
+                f"{prompt}\n\nGroq rejected JSON mode with this exact error: {exc}\n"
+                "Retry without response_format. Return one valid JSON object only; "
+                "do not wrap it in prose.\n"
+                f"{failed_output}"
+            )
+            time.sleep(1.0)
+            continue
         except RateLimitError as exc:
             if api_attempts == 3:
                 raise LLMError(
@@ -167,6 +196,19 @@ def generate_steps(
                 ) from exc
             time.sleep(rate_limit_delay(rate_limit_retries, exc.retry_after_s))
             rate_limit_retries += 1
+            continue
+        except JsonParseError as exc:
+            if repairs == 2 or api_attempts == 3:
+                raise ValueError(
+                    f"Provider returned invalid JSON after {api_attempts} API attempts"
+                ) from exc
+            repairs += 1
+            prompt = (
+                f"{prompt}\n\nYour previous response was not valid JSON after code-fence "
+                f"stripping: {exc}\nReturn a corrected JSON object only.\n"
+                f"Previous response:\n{exc.response_text}"
+            )
+            time.sleep(1.0)
             continue
         raw_payload = payload.copy()
         payload["question_input"] = question_payload
@@ -199,9 +241,14 @@ def generate_steps(
     raise AssertionError("unreachable")
 
 
-def _steps_cache_path(question_payload: dict[str, Any], cache_dir: Path) -> Path:
-    """Build the stable cache path for the normalized authoritative input."""
-    encoded = json.dumps(question_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+def _steps_cache_path(
+    question_payload: dict[str, Any],
+    speech_language_mode: SpeechLanguageMode,
+    cache_dir: Path,
+) -> Path:
+    """Build the cache path from the question and narration-language config."""
+    cache_payload = {"question": question_payload, "speech_language_mode": speech_language_mode}
+    encoded = json.dumps(cache_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     digest = hashlib.sha256(encoded).hexdigest()
     return cache_dir / f"{digest}.json"
 

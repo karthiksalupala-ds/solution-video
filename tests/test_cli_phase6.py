@@ -69,9 +69,12 @@ def test_cli_maps_render_failure_to_exit_4(tmp_path, monkeypatch, capsys):
     assert "Render failed" in capsys.readouterr().err
 
 
-def test_voice_test_reports_deferred_support(capsys):
-    assert main(["voice-test"]) == 4
-    assert "not integrated" in capsys.readouterr().out
+def test_voice_test_previews_approved_variants_without_network(capsys):
+    assert main(["voice-test"]) == 0
+    output = capsys.readouterr().out
+    assert "Preview only; no provider/API calls made" in output
+    assert "ElevenLabs total estimate:" in output
+    assert "1.english:" in output
 
 
 def test_package_version_is_semantic():
@@ -92,7 +95,7 @@ def test_public_render_from_today_returns_typed_meta(monkeypatch, tmp_path):
     expected_spec = SolutionSpec.from_payload(json.loads((ROOT / "examples" / "speed_train.json").read_text(encoding="utf-8")))
     expected_meta = Meta(path="solution.mp4", duration_s=10, size_bytes=100, answer_verified=True)
     monkeypatch.setattr(api, "GroqProvider", lambda: object())
-    monkeypatch.setattr(api, "generate_steps", lambda question, provider: expected_spec)
+    monkeypatch.setattr(api, "generate_steps", lambda question, provider, **kwargs: expected_spec)
     monkeypatch.setattr(api, "render_spec", lambda spec, theme, output_path, **kwargs: expected_meta)
 
     result = api.render_from_today(input_path, tmp_path / "solution.mp4", no_voice=True)
