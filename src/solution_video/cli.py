@@ -18,6 +18,7 @@ from .llm import GeminiProvider, GroqProvider, LLMError
 from .llm.base import SPEECH_LANGUAGE_MODES
 from .pipeline import generate_steps, plan_scenes, render, render_from_file
 from .schema import QuestionInput, SolutionSpec
+from .voice.runtime import estimate_voice
 from .verify import verify
 from .voice.listening_test import (
     EDGE_VOICES,
@@ -118,11 +119,13 @@ def main(argv: list[str] | None = None) -> int:
                 return _blocked(args.out, gate.reasons)
             render_started = True
             if args.dry_run:
-                _print_plan(spec, load_theme(args.theme))
+                _print_plan(spec, load_theme(args.theme), args.voice_provider, args.no_voice)
                 return 0
             meta = render(
                 spec, load_theme(args.theme), args.out,
                 no_voice=args.no_voice,
+                voice_provider=args.voice_provider,
+                sync_report=args.sync_report,
             )
         else:
             spec = _generate_from_today(
@@ -130,11 +133,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             render_started = True
             if args.dry_run:
-                _print_plan(spec, load_theme(args.theme))
+                _print_plan(spec, load_theme(args.theme), args.voice_provider, args.no_voice)
                 return 0
             meta = render(
                 spec, load_theme(args.theme), args.out,
                 no_voice=args.no_voice,
+                voice_provider=args.voice_provider,
+                sync_report=args.sync_report,
             )
     except LLMError as exc:
         print(f"LLM failed: {exc}", file=sys.stderr)
@@ -157,8 +162,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Rendered {meta.path}: {meta.duration_s:.1f}s ({meta.size_bytes} bytes).")
     if args.verbose:
         print(f"Verified: {meta.answer_verified}; voice: {meta.voice_provider or 'none'}; version: {meta.version}")
-        for warning in meta.warnings:
-            print(f"Warning: {warning}", file=sys.stderr)
+    for warning in meta.warnings:
+        print(f"Warning: {warning}", file=sys.stderr)
     return 0
 
 
@@ -166,7 +171,13 @@ def _add_render_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--theme", type=Path)
     parser.add_argument("--seed", type=_seed)
     parser.add_argument("--no-voice", action="store_true", help="Render without speech synthesis")
+    parser.add_argument(
+        "--voice-provider",
+        choices=("hf_space", "edge_tts", "elevenlabs", "none"),
+        help="Override the configured narration provider order for this run",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Validate and print the scene plan without rendering")
+    parser.add_argument("--sync-report", action="store_true", help="Print narration word-time and reveal-time alignment")
     parser.add_argument("--verbose", action="store_true")
 
 
@@ -239,13 +250,38 @@ def _validate_input(input_path: Path) -> int:
         return 2
 
 
-def _print_plan(spec: SolutionSpec, theme: Theme) -> None:
+def _print_plan(
+    spec: SolutionSpec,
+    theme: Theme,
+    voice_provider: str | None = None,
+    no_voice: bool = False,
+) -> None:
     plan = plan_scenes(spec, theme)
+    voice = (
+        ("none", "none", 0, 0)
+        if no_voice
+        else estimate_voice(
+            _speech_inputs_for_cli(spec),
+            provider_override=voice_provider,
+        )
+    )
     print(json.dumps({
         "renders": False,
         "estimated_duration_s": round(sum(item.duration_s for item in plan), 2),
         "scenes": [{"name": item.name, "duration_s": round(item.duration_s, 2)} for item in plan],
+        "voice_estimate": {
+            "provider": voice[0],
+            "model": voice[1],
+            "characters": voice[2],
+            "estimated_credits": voice[3],
+        },
     }, indent=2))
+
+
+def _speech_inputs_for_cli(spec: SolutionSpec):
+    from .pipeline import _speech_inputs
+
+    return _speech_inputs(spec)
 
 
 def _blocked(output_path: Path, reasons: tuple[str, ...]) -> int:
@@ -275,12 +311,19 @@ def _load_local_env() -> None:
         if key in {
             "GROQ_API_KEY",
             "GROQ_MODEL",
+            "GROQ_JSON_MODE",
             "GEMINI_API_KEY",
             "SPEECH_LANGUAGE_MODE",
             "HF_TOKEN",
             "HF_TTS_SPACE",
             "HF_TTS_REFERENCE_AUDIO",
             "ELEVENLABS_API_KEY",
+            "ELEVENLABS_VOICE_ID",
+            "ELEVENLABS_MODEL_ID",
+            "ELEVENLABS_RESERVE_CREDITS",
+            "VOICE_PROVIDER_ORDER",
+            "VOICE_ELEVENLABS_FALLBACK",
+            "EDGE_TTS_VOICE",
         } and not os.getenv(key) and value:
             os.environ[key] = value
 

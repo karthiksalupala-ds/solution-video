@@ -138,20 +138,43 @@ def test_hf_adapter_rejects_uninspected_or_changed_endpoint(tmp_path):
 
 
 def test_edge_adapter_is_mocked_and_returns_audio_file(tmp_path):
+    observed = {}
+
     class FakeCommunicate:
-        def __init__(self, text, voice):
+        def __init__(self, text, voice, **kwargs):
             self.text = text
             self.voice = voice
+            observed.update(kwargs)
 
-        async def save(self, output):
-            Path(output).write_bytes(b"fake mp3")
+        async def stream(self):
+            yield {"type": "audio", "data": b"fake mp3"}
+            yield {"type": "WordBoundary", "offset": 15_000_000, "text": "hello"}
 
     audio = EdgeTTSProvider(
-        "te-IN-ShrutiNeural", tmp_path, communicate_factory=FakeCommunicate
-    ).synthesize("approved text")
+        "te-IN-ShrutiNeural", tmp_path, rate="-8%", communicate_factory=FakeCommunicate
+    )
+    path, boundaries = audio.synthesize_with_word_boundaries("approved text")
 
-    assert audio.suffix == ".mp3"
-    assert audio.read_bytes() == b"fake mp3"
+    assert path.suffix == ".mp3"
+    assert path.read_bytes() == b"fake mp3"
+    assert boundaries == (("hello", 1.5),)
+    assert observed == {"rate": "-8%", "boundary": "WordBoundary"}
+
+
+def test_edge_adapter_rejects_audio_without_word_boundaries(tmp_path):
+    class FakeCommunicate:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def stream(self):
+            yield {"type": "audio", "data": b"fake mp3"}
+
+    provider = EdgeTTSProvider(
+        "en-IN-NeerjaNeural", tmp_path, communicate_factory=FakeCommunicate
+    )
+
+    with pytest.raises(VoiceTestError, match="no WordBoundary metadata"):
+        provider.synthesize_with_word_boundaries("approved text")
 
 
 def test_elevenlabs_stock_voice_pagination_is_mocked():

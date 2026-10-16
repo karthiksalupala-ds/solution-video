@@ -94,6 +94,17 @@ class TipSpec(BaseModel):
     speech: str | None = Field(default=None, max_length=400)
 
 
+class VoiceClipMeta(BaseModel):
+    """Non-secret accounting details for one synthesized scene."""
+
+    model_config = ConfigDict(extra="forbid")
+    scene: str
+    provider: str
+    model: str
+    characters: int = Field(ge=0)
+    credits: int = Field(ge=0)
+
+
 class SolutionSpec(BaseModel):
     """A render-ready solution paired with its authoritative question."""
 
@@ -143,6 +154,11 @@ class Meta(BaseModel):
     status: Literal["ok", "blocked"] = "ok"
     reasons: list[str] = Field(default_factory=list)
     voice_provider: str | None = None
+    voice_model: str | None = None
+    voice_language_mode: str | None = None
+    voice_characters: int = Field(default=0, ge=0)
+    voice_credits: int = Field(default=0, ge=0)
+    voice_clips: list[VoiceClipMeta] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     version: str = "0.1.0"
 

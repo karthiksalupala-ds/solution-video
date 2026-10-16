@@ -3,6 +3,7 @@ import pytest
 from solution_video.llm.groq import GroqProvider
 from solution_video.cli import _load_local_env
 from solution_video.llm.base import JsonModeValidationError
+import solution_video.llm.groq as groq_module
 
 
 def test_groq_model_uses_environment_default(monkeypatch):
@@ -90,6 +91,9 @@ def test_groq_json_mode_validation_without_failed_generation_is_explicit(monkeyp
     import requests
     import pytest
 
+    monkeypatch.setattr(groq_module, "_JSON_MODE_REJECTED", False)
+    monkeypatch.setenv("GROQ_JSON_MODE", "1")
+
     class _Response:
         status_code = 400
         headers = {}
@@ -108,6 +112,66 @@ def test_groq_json_mode_validation_without_failed_generation_is_explicit(monkeyp
         provider.complete("prompt")
     assert raised.value.failed_generation is None
     assert raised.value.fallback_available
+
+
+def test_groq_json_mode_rejection_is_remembered_for_later_instances(monkeypatch):
+    import requests
+
+    monkeypatch.setattr(groq_module, "_JSON_MODE_REJECTED", False)
+    monkeypatch.setenv("GROQ_JSON_MODE", "1")
+    calls = []
+
+    class _Response:
+        status_code = 400
+        headers = {}
+
+        @staticmethod
+        def json():
+            return {"error": {"code": "json_validate_failed", "message": "invalid"}}
+
+        def raise_for_status(self):
+            raise requests.HTTPError(response=self)
+
+    def _post(_url, **kwargs):
+        calls.append(kwargs["json"])
+        if len(calls) == 1:
+            return _Response()
+        class _Success:
+            @staticmethod
+            def json():
+                return {"choices": [{"message": {"content": "{}"}}]}
+            @staticmethod
+            def raise_for_status():
+                return None
+        return _Success()
+
+    monkeypatch.setattr(requests, "post", _post)
+    first = GroqProvider(api_key="test-key")
+    with pytest.raises(JsonModeValidationError):
+        first.complete("first")
+
+    second = GroqProvider(api_key="test-key")
+    assert second.json_mode_enabled is False
+    assert second.complete("second") == "{}"
+    assert "response_format" in calls[0]
+    assert "response_format" not in calls[1]
+
+
+@pytest.mark.parametrize(("setting", "expected"), [("0", False), ("1", True)])
+def test_groq_json_mode_environment_setting(monkeypatch, setting, expected):
+    monkeypatch.setattr(groq_module, "_JSON_MODE_REJECTED", False)
+    monkeypatch.setenv("GROQ_JSON_MODE", setting)
+
+    assert GroqProvider(api_key="test-key").json_mode_enabled is expected
+
+
+def test_groq_json_mode_rejects_invalid_environment_setting(monkeypatch):
+    from solution_video.llm.base import LLMError
+
+    monkeypatch.setenv("GROQ_JSON_MODE", "true")
+
+    with pytest.raises(LLMError, match="GROQ_JSON_MODE must be 0 or 1"):
+        GroqProvider(api_key="test-key")
 
 
 def test_groq_reports_completion_limit_truncation(monkeypatch):
@@ -136,7 +200,7 @@ def test_groq_reports_completion_limit_truncation(monkeypatch):
     monkeypatch.setattr(requests, "post", _post)
     provider = GroqProvider(api_key="test-key")
 
-    with pytest.raises(JsonParseError, match="reached the 4096-token limit"):
+    with pytest.raises(JsonParseError, match="reached the 8192-token limit"):
         provider.complete("prompt")
     assert captured["max_completion_tokens"] == MAX_COMPLETION_TOKENS
 

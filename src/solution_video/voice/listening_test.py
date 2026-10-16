@@ -139,6 +139,7 @@ class EdgeTTSProvider:
         self,
         voice: str,
         temp_dir: Path,
+        rate: str = "-8%",
         communicate_factory: Callable[..., Any] | None = None,
     ) -> None:
         if communicate_factory is None:
@@ -149,20 +150,50 @@ class EdgeTTSProvider:
             communicate_factory = edge_tts.Communicate
         self.model = voice
         self.temp_dir = temp_dir
+        self.rate = rate
         self.communicate_factory = communicate_factory
 
     def synthesize(self, text: str) -> Path:
+        output, _ = self.synthesize_with_word_boundaries(text)
+        return output
+
+    def synthesize_with_word_boundaries(
+        self,
+        text: str,
+    ) -> tuple[Path, tuple[tuple[str, float], ...]]:
+        """Save audio and capture WordBoundary offsets, converted from 100-ns ticks."""
         output = _temporary_audio(self.temp_dir, ".mp3")
+        boundaries: list[tuple[str, float]] = []
 
         async def save() -> None:
-            await self.communicate_factory(text, self.model).save(str(output))
+            communicate = self.communicate_factory(
+                text,
+                self.model,
+                rate=self.rate,
+                boundary="WordBoundary",
+            )
+            with output.open("wb") as audio_file:
+                async for chunk in communicate.stream():
+                    if chunk.get("type") == "audio":
+                        audio_file.write(chunk["data"])
+                    elif chunk.get("type") == "WordBoundary":
+                        boundaries.append((
+                            str(chunk["text"]),
+                            float(chunk["offset"]) / 10_000_000,
+                        ))
 
         try:
             asyncio.run(save())
+            if not output.is_file() or output.stat().st_size == 0:
+                raise VoiceTestError(f"edge-tts {self.model} returned no audio")
+            if not boundaries:
+                raise VoiceTestError(f"edge-tts {self.model} returned no WordBoundary metadata")
         except Exception as exc:
             output.unlink(missing_ok=True)
+            if isinstance(exc, VoiceTestError):
+                raise
             raise VoiceTestError(f"edge-tts {self.model} synthesis failed: {exc}") from exc
-        return output
+        return output, tuple(boundaries)
 
 
 class HFSpaceProvider:

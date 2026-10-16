@@ -1,0 +1,67 @@
+{
+  "english": {
+    "symbols": {
+      "×": " times ",
+      "÷": " divided by ",
+      "+": " plus ",
+      "=": " equals ",
+      "%": " percent ",
+      "km/h": " kilometres per hour ",
+      "m/s": " metres per second ",
+      "km": " kilometres ",
+      "m": " metres ",
+      "kg": " kilograms ",
+      "hrs": " hours ",
+      "hr": " hour ",
+      "mins": " minutes ",
+      "min": " minute "
+    },
+    "contractions": {
+      "can't": "cannot",
+      "don't": "do not",
+      "it's": "it is"
+    }
+  },
+  "tanglish_latin": {
+    "symbols": {
+      "×": " times ",
+      "÷": " divided by ",
+      "+": " plus ",
+      "=": " equals ",
+      "%": " percent ",
+      "km/h": " kilometres per hour ",
+      "m/s": " metres per second ",
+      "km": " kilometres ",
+      "m": " metres "
+    },
+    "contractions": {}
+  },
+  "telugu_script": {
+    "symbols": {
+      "×": " times ",
+      "÷": " divided by ",
+      "+": " plus ",
+      "=": " equals ",
+      "%": " percent ",
+      "km/h": " kilometres per hour ",
+      "m/s": " metres per second ",
+      "km": " kilometres ",
+      "m": " metres "
+    },
+    "contractions": {}
+  },
+  "mixed": {
+    "symbols": {
+      "×": " times ",
+      "÷": " divided by ",
+      "+": " plus ",
+      "=": " equals ",
+      "%": " percent ",
+      "km/h": " kilometres per hour ",
+      "m/s": " metres per second ",
+      "km": " kilometres ",
+      "m": " metres "
+    },
+    "contractions": {}
+  }
+}

@@ -16,19 +16,25 @@ from .base import (
 )
 
 
-MAX_COMPLETION_TOKENS = 4096
+MAX_COMPLETION_TOKENS = 8192
+_JSON_MODE_REJECTED = False
 
 
 class GroqProvider(JsonProvider):
     def __init__(self, api_key: str | None = None, model: str | None = None, timeout_s: int = 25) -> None:
+        global _JSON_MODE_REJECTED
         self.api_key = api_key or os.getenv("GROQ_API_KEY")
         self.model = model or os.getenv("GROQ_MODEL") or "openai/gpt-oss-20b"
         self.timeout_s = timeout_s
-        self.json_mode_enabled = True
+        json_mode = os.getenv("GROQ_JSON_MODE", "1")
+        if json_mode not in {"0", "1"}:
+            raise LLMError("GROQ_JSON_MODE must be 0 or 1")
+        self.json_mode_enabled = json_mode == "1" and not _JSON_MODE_REJECTED
         if not self.api_key:
             raise LLMError("GROQ_API_KEY is not configured")
 
     def complete(self, prompt: str) -> str:
+        global _JSON_MODE_REJECTED
         request_body = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
@@ -74,6 +80,7 @@ class GroqProvider(JsonProvider):
             if self.api_key and failed_generation:
                 failed_generation = failed_generation.replace(self.api_key, "[REDACTED]")
             if error_code == "json_validate_failed" and self.json_mode_enabled:
+                _JSON_MODE_REJECTED = True
                 self.json_mode_enabled = False
                 raise JsonModeValidationError(
                     f"Groq JSON mode validation failed (HTTP {status}, code {error_code})"

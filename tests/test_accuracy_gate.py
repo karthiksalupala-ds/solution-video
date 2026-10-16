@@ -106,6 +106,24 @@ def test_gate_accepts_work_rates_grounded_in_question():
     assert verify(spec.question_input, spec).passed
 
 
+def test_gate_blocks_rounded_decimal_work_rates():
+    payload = json.loads((ROOT / "examples" / "time_work.json").read_text(encoding="utf-8"))
+    spec = SolutionSpec.from_payload(payload)
+    rounded_steps = list(spec.steps)
+    rounded_steps[0] = rounded_steps[0].model_copy(update={
+        "lines": ["1 / 12 = 0.0833"],
+    })
+    rounded_steps[1] = rounded_steps[1].model_copy(update={
+        "lines": ["1 / 24 = 0.0417"],
+    })
+    rounded = spec.model_copy(update={"steps": rounded_steps})
+
+    result = verify(spec.question_input, rounded)
+
+    assert not result.passed
+    assert any("arithmetic is false" in reason for reason in result.reasons)
+
+
 class _MockProvider(JsonProvider):
     def __init__(self, payload: dict | list[dict]):
         self.payloads = payload if isinstance(payload, list) else [payload]
@@ -256,6 +274,72 @@ def test_groq_json_mode_failure_uses_failed_generation_in_repair_prompt(monkeypa
     assert provider.calls == 2
     assert '{"steps":' in provider.retry_prompt
     assert "Retry without response_format" in provider.retry_prompt
+
+
+def test_gate_repair_returns_rounded_rates_to_exact_fraction_output(monkeypatch):
+    import solution_video.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _delay: None)
+    fixture = json.loads((ROOT / "examples" / "time_work.json").read_text(encoding="utf-8"))
+    valid_spec = SolutionSpec.from_payload(fixture)
+    question = valid_spec.question_input
+    bad_steps = list(valid_spec.steps)
+    bad_steps[0] = bad_steps[0].model_copy(update={
+        "lines": ["1 / 12 = 0.0833"],
+    })
+    bad_steps[1] = bad_steps[1].model_copy(update={
+        "lines": ["1 / 24 = 0.0417"],
+    })
+    rounded_spec = valid_spec.model_copy(update={"steps": bad_steps})
+    good_payload = valid_spec.model_dump(mode="json")
+    good_payload.pop("question_input")
+    bad_payload = rounded_spec.model_dump(mode="json")
+    bad_payload.pop("question_input")
+
+    class _CaptureProvider(JsonProvider):
+        calls = 0
+        repair_prompt = ""
+
+        def complete(self, prompt: str) -> str:
+            if self.calls:
+                self.repair_prompt = prompt
+            payload = (bad_payload, good_payload)[self.calls]
+            self.calls += 1
+            return json.dumps(payload)
+
+    provider = _CaptureProvider()
+    generated = generate_steps(question, provider)
+
+    assert provider.calls == 2
+    assert verify(question, generated).passed
+    assert "Exact gate reasons:" in provider.repair_prompt
+    assert "Step 1 line 1 arithmetic is false: 1 / 12 = 0.0833" in provider.repair_prompt
+    assert "Step 2 line 1 arithmetic is false: 1 / 24 = 0.0417" in provider.repair_prompt
+    assert all("/" in line for step in generated.steps[:2] for line in step.lines)
+
+
+def test_gate_arithmetic_failure_gets_only_one_repair(monkeypatch):
+    import solution_video.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _delay: None)
+    fixture = json.loads((ROOT / "examples" / "time_work.json").read_text(encoding="utf-8"))
+    spec = SolutionSpec.from_payload(fixture)
+    invalid_payload = spec.model_dump(mode="json")
+    invalid_payload.pop("question_input")
+    invalid_payload["steps"][0]["lines"] = ["1 / 12 = 0.0833"]
+
+    class _AlwaysRounded(JsonProvider):
+        calls = 0
+
+        def complete(self, prompt: str) -> str:
+            self.calls += 1
+            return json.dumps(invalid_payload)
+
+    provider = _AlwaysRounded()
+
+    with pytest.raises(ValueError, match="single arithmetic repair"):
+        generate_steps(spec.question_input, provider)
+    assert provider.calls == 2
 
 
 def test_json_mode_fallback_respects_shared_three_request_ceiling(monkeypatch):

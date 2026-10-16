@@ -2,7 +2,7 @@
 
 Turn a verified aptitude-question JSON file into a vertical MP4 plus adjacent metadata. The package supports the CLI and a typed Python API; an HTTP/MCP wrapper can be added by consumers later.
 
-> **v0.1.0 status:** speech synthesis is not integrated yet. MP4s contain a synthesized sound-effects track (AAC), and `--no-voice` explicitly requests that mode. A render without `--no-voice` includes a warning in its metadata; `voice-test` reports that TTS is unavailable.
+> **Voice status:** rendering can synthesize English narration using the configured provider chain, align scene duration to each clip, and cache audio locally. `--no-voice` always skips provider access and still produces a valid SFX-backed video.
 
 ## Install
 
@@ -43,7 +43,7 @@ solution-video steps --input examples/speed_train.json --out out/steps.json --pr
 solution-video render-from-today --input today.json --out out/today.mp4 --provider groq --no-voice
 ```
 
-`render-from-today` reads `GROQ_API_KEY` or `GEMINI_API_KEY` from the process environment. For local development, an ignored `.env` file is also read by the CLI. Never commit credentials. Set `GROQ_MODEL` to override the Groq model (`openai/gpt-oss-20b` is the default). If Groq rejects JSON mode with `json_validate_failed`, the adapter retries once without `response_format`; its strict JSON parser and schema/accuracy repair loop still apply, within the shared three-request limit. The adapter requests up to 4,096 completion tokens and treats a length-truncated response as invalid JSON for repair. Set `SPEECH_LANGUAGE_MODE` to `english`, `tanglish_latin`, `telugu_script`, or `mixed` to guide all generated step, tip, and answer narration; `--speech-language-mode` can override it on `steps` and `render-from-today`. The selected mode is part of the generated-step cache key.
+`render-from-today` reads `GROQ_API_KEY` or `GEMINI_API_KEY` from the process environment. For local development, an ignored `.env` file is also read by the CLI. Never commit credentials. Set `GROQ_MODEL` to override the Groq model (`openai/gpt-oss-20b` is the default), and `GROQ_JSON_MODE=0` to disable JSON mode initially (`1` enables it unless Groq has already rejected it in this process). If Groq rejects JSON mode with `json_validate_failed`, the adapter remembers that for the process and sends subsequent calls without `response_format`; its strict JSON parser and schema/accuracy repair loop still apply, within the shared three-request limit. The adapter requests up to 8,192 completion tokens and treats a `finish_reason: length` response as truncated JSON eligible for repair. Arithmetic/grounding/filler gate failures receive one repair attempt with the exact gate reasons; gate rules are unchanged. Generated calculations should use exact fractions and integers, never rounded decimals unless decimals appear in the question. Set `SPEECH_LANGUAGE_MODE` to `english`, `tanglish_latin`, `telugu_script`, or `mixed` to guide all generated step, tip, and answer narration; `--speech-language-mode` can override it on `steps` and `render-from-today`. The selected mode is part of the generated-step cache key.
 
 ## Python API
 
@@ -53,21 +53,19 @@ from solution_video import Meta, render, render_from_today
 result: Meta = render(
     "examples/di_average.json",
     "out/solution.mp4",
-    no_voice=True,
     seed=12,
 )
-print(result.path, result.duration_s, result.answer_verified)
+print(result.path, result.duration_s, result.answer_verified, result.voice_provider)
 
 # For a raw question file, this generates steps using the selected LLM first.
 result = render_from_today(
     "today.json",
     "out/today.mp4",
     provider="groq",
-    no_voice=True,
 )
 ```
 
-Both functions return `solution_video.Meta`, with `path`, `duration_s`, `size_bytes`, `answer_verified`, `voice_provider`, `warnings`, and `version`. Gate failures and media/output failures raise exceptions; the CLI maps them to documented exit codes.
+Both functions return `solution_video.Meta`, with `path`, `duration_s`, `size_bytes`, answer verification, and non-secret voice provider/model/character/credit details. Gate failures and media/output failures raise exceptions; the CLI maps them to documented exit codes.
 
 ## Input JSON
 
@@ -97,7 +95,15 @@ The private HF Space uses `HF_TTS_SPACE`, `HF_TOKEN`, and `HF_TTS_REFERENCE_AUDI
 
 ElevenLabs uses `ELEVENLABS_API_KEY`. The command lists account premade voices first; select one with `--elevenlabs-voice-id`. Synthesis requires a separate explicit credit confirmation equal to or above the printed estimate, for example `--approve-elevenlabs-credits 1200`. The command refuses ElevenLabs generation above 1,500 estimated credits. The existing comparison tested `eleven_v3` and `eleven_multilingual_v2`; no more Telugu/Tanglish generation is planned for the current English-first narration. If Telugu is tested later, ElevenLabs documents Telugu support for `eleven_v4` (a multilingual model, not a Telugu-only model); choose a voice suited to Telugu and confirm the account supports that model before spending credits. Only premade voices are used; no voice cloning is performed. Treat free-tier samples as non-commercial.
 
-The three Edge voices are `te-IN-ShrutiNeural`, `te-IN-MohanNeural`, and `en-IN-NeerjaNeural`. Audio and `INDEX.md` are written to `examples/voice_tests/`. Test-provider network calls are mocked. Voice listening tests do not enable TTS in video rendering; v0.1.0 still renders without narration.
+The three Edge voices are `te-IN-ShrutiNeural`, `te-IN-MohanNeural`, and `en-IN-NeerjaNeural`. Audio and `INDEX.md` are written to `examples/voice_tests/`. Test-provider network calls are mocked.
+
+## Voice rendering
+
+The default provider order is `hf_space,edge_tts,none`. HF uses `HF_TTS_SPACE`, `HF_TOKEN`, and the user-owned reference recording configured by `HF_TTS_REFERENCE_AUDIO`; Edge uses `EDGE_TTS_VOICE` (default `en-IN-NeerjaNeural`) and `EDGE_TTS_RATE` (default `-8%`). Configure the chain with `VOICE_PROVIDER_ORDER`. `--voice-provider` selects a provider for one run; `--voice-provider none` disables TTS. The chosen narration language is `SPEECH_LANGUAGE_MODE` (default `english`).
+
+ElevenLabs is opt-in with `--voice-provider elevenlabs`. Set `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and optionally `ELEVENLABS_MODEL_ID` (default `eleven_multilingual_v2`). Before every synthesis request, the renderer reads the documented [subscription endpoint](https://elevenlabs.io/docs/api-reference/user/subscription/get) and requires remaining characters minus the request estimate to stay at or above `ELEVENLABS_RESERVE_CREDITS` (default `1500`). If usage cannot be checked, ElevenLabs is skipped. Set `VOICE_ELEVENLABS_FALLBACK=1` only if an ElevenLabs failure may continue to the configured providers. Audio already in the local cache makes no provider request and uses zero credits. Check the account plan's commercial-use rights before publishing; an attribution footer does not grant rights.
+
+`--dry-run` prints the selected provider/model and estimated characters/credits without contacting TTS providers. `--sync-report` prints expected Edge TTS word-boundary times beside actual scene reveal times; other providers use proportional cue timing. Edge word timings are cached alongside audio. The default theme uses 0.45 seconds of scene padding. `solution.meta.json` records provider, model, language mode, characters, credits, and per-scene usage, never credentials. The default theme enables the small `Voice: ElevenLabs` attribution on public-facing outputs using ElevenLabs audio; theme `voice.captions` optionally enables word-progressive captions. FFmpeg trims silence and normalizes each clip before mixing; SFX are ducked under speech. Scene durations are overridden by clip length plus theme padding and are constrained to 75 seconds (with at most a small pitch-preserving speech speed-up).
 
 ## Another bot calling the generator
 
@@ -129,12 +135,12 @@ Alternatively, install the package into the bot's Python environment and call `r
 - An oversized file gets one lower-bitrate H.264/AAC encode. If it still violates the size constraint, it is rejected.
 - Install FFmpeg with `ffprobe` on `PATH` if rendering or validation reports either tool missing.
 - Exit codes: `0` success; `2` invalid input or accuracy-gate block; `3` LLM/provider failure; `4` rendering failure (including unavailable requested voice); `5` output media/size constraints failed.
-- Use `--dry-run` to validate a render-ready JSON and inspect planned scenes and estimated duration without rendering.
+- Use `--dry-run` to validate a render-ready JSON and inspect planned scenes and estimated duration/provider usage without rendering or making provider calls.
 - Use `--verbose` to print the result metadata summary and warnings.
 
 ## GitHub Actions
 
-Pull requests run the test suite and render all aptitude examples. `workflow_dispatch` accepts an example JSON path and a voice on/off selection, then uploads the MP4 artifact and reports install/render times and file size in the job summary. v0.1.0 has no TTS integration; selecting voice on is rejected by `voice-test` rather than silently producing a speech-free video. No LLM key is needed to render checked-in fixtures.
+Pull requests run the test suite and render all aptitude examples. `workflow_dispatch` accepts an example JSON path and a voice on/off selection, then uploads the MP4 artifact and reports install/render times and file size in the job summary. No LLM key is needed to render checked-in fixtures; provider credentials should only be added as GitHub Secrets when a workflow is intentionally configured to synthesize voice.
 
 ## License
 

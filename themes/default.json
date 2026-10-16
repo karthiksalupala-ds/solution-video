@@ -11,5 +11,11 @@
   },
   "sizes": {"title_px": 82, "body_px": 42, "caption_px": 30, "footer_px": 24},
   "motion": {"scene_transition_s": 0.35, "reveal_s": 0.45, "stagger_s": 0.12, "easing_default": "out_cubic"},
-  "branding": {"footer_text": "Aptitude Daily", "show_day_pill": true}
+  "branding": {"footer_text": "Aptitude Daily", "show_day_pill": true},
+  "voice": {
+    "public_facing": true,
+    "elevenlabs_attribution_text": "Voice: ElevenLabs",
+    "captions": false,
+    "scene_padding_s": 0.45
+  }
 }

@@ -2,9 +2,9 @@
 
 Return one JSON object only. Use only the supplied input. Do not invent facts, sources, companies, values, or formulas.
 
-Create 2 to 5 steps. Every step must include at least one short, machine-evaluable arithmetic equality (exactly one `=`) and show its computed result. Do not use generic formulas as a substitute for calculations. The first evaluable step must use only numeric operands stated in the question or standard constants: 18/5, 5/18, 100, 60, 3600, 1000, or 1 whole unit. Later steps may use results established in earlier steps. Keep each line under 90 characters.
+Create 2 to 5 steps. Never round numbers: use exact fractions and integers, not decimal approximations, unless the question itself supplies decimal values. Every step must include at least one short, machine-evaluable arithmetic equality (exactly one `=`) and show its exact result. Do not use generic formulas as a substitute for calculations. The first evaluable step must use only numeric operands stated in the question or standard constants: 18/5, 5/18, 100, 60, 3600, 1000, or 1 whole unit. Later steps may use exact results established in earlier steps. Keep each line under 90 characters.
 
-For time-and-work questions, calculate each person's one-day work rate on its own line before combining rates. For data-interpretation questions, calculate each part's value or rate separately before combining or comparing them. Do not use a combined value until its component calculations have been shown.
+For time-and-work questions, calculate each person's one-day work rate on its own line before combining rates. Preserve exact fractions throughout; for example, show `1/12 = 1/12 work/day` and `1/24 = 1/24 work/day`, then combine with exact common-denominator steps such as `1/12 + 1/24 = 2/24 + 1/24`, `2/24 + 1/24 = 3/24`, and `3/24 = 1/8`. Finish with `1 / (1/8) = 8 days`. For data-interpretation questions, calculate each part's value or rate separately before combining or comparing them. Do not use a combined value until its component calculations have been shown.
 
 End the calculation sequence with a genuine machine-evaluable computation whose result is the numeric final answer (units may be shown). Do not use filler equalities such as `165 = 165`. Do not copy the supplied final answer if the question's calculations do not produce it.
 

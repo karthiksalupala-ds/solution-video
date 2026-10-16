@@ -13,6 +13,7 @@ from pathlib import Path
 
 
 MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+MAX_OUTPUT_DURATION_S = 75.0
 
 
 class OutputValidationError(RuntimeError):
@@ -96,6 +97,8 @@ def _validate_streams(info: MediaInfo, *, expect_audio: bool) -> None:
         failures.append(f"frame rate is {info.fps:g}, expected 30 fps")
     if info.duration_s <= 0:
         failures.append("duration must be positive")
+    if info.duration_s > MAX_OUTPUT_DURATION_S + 0.05:
+        failures.append(f"duration is {info.duration_s:.2f}s, greater than the 75-second limit")
     if failures:
         raise OutputValidationError("Output constraints failed: " + "; ".join(failures))
 

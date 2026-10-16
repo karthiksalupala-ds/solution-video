@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from solution_video.cli import main
 from solution_video.engine.encode import EncodeError
 from solution_video.engine.output import OutputValidationError
@@ -38,7 +40,30 @@ def test_dry_run_prints_plan_without_creating_video(tmp_path, capsys):
     assert result == 0
     assert plan["renders"] is False
     assert plan["scenes"][0]["name"] == "title"
+    assert plan["voice_estimate"]["provider"] == "hf_space"
+    assert plan["voice_estimate"]["characters"] > 0
     assert not output.exists()
+
+
+def test_dry_run_elevenlabs_estimate_does_not_need_or_call_credentials(tmp_path, capsys, monkeypatch):
+    import requests
+
+    monkeypatch.setattr(
+        requests.Session,
+        "get",
+        lambda *args, **kwargs: pytest.fail("dry-run must not contact ElevenLabs"),
+    )
+    result = main([
+        "render", "--input", str(ROOT / "examples" / "speed_train.json"),
+        "--out", str(tmp_path / "dry-run.mp4"), "--dry-run",
+        "--voice-provider", "elevenlabs",
+    ])
+
+    plan = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert plan["voice_estimate"]["provider"] == "elevenlabs"
+    assert plan["voice_estimate"]["model"] == "eleven_multilingual_v2"
+    assert plan["voice_estimate"]["estimated_credits"] == plan["voice_estimate"]["characters"]
 
 
 def test_cli_maps_output_validation_failure_to_exit_5(tmp_path, monkeypatch, capsys):

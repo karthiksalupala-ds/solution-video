@@ -77,6 +77,18 @@ def test_invalid_stream_constraints_are_reported(tmp_path, monkeypatch):
         validate_output(output)
 
 
+def test_video_duration_over_75_seconds_is_rejected(tmp_path, monkeypatch):
+    output = tmp_path / "too-long.mp4"
+    output.write_bytes(b"small")
+    monkeypatch.setattr(
+        "solution_video.engine.output._probe",
+        lambda _: MediaInfo("h264", "aac", "yuv420p", 720, 1280, 30.0, 75.1),
+    )
+
+    with pytest.raises(OutputValidationError, match="greater than the 75-second limit"):
+        validate_output(output)
+
+
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="ffmpeg/ffprobe are required")
 def test_valid_mp4_passes_output_validation(tmp_path):
     import wave

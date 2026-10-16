@@ -18,6 +18,7 @@ def render(
     theme_path: str | Path | None = None,
     no_voice: bool = False,
     seed: int | None = None,
+    voice_provider: str | None = None,
 ) -> Meta:
     """Render a validated solution JSON file and return its output metadata."""
     return render_from_file(
@@ -26,6 +27,7 @@ def render(
         theme_path=theme_path,
         no_voice=no_voice,
         seed=seed,
+        voice_provider=voice_provider,
     )
 
 
@@ -38,6 +40,7 @@ def render_from_today(
     no_voice: bool = False,
     seed: int | None = None,
     speech_language_mode: str | None = None,
+    voice_provider: str | None = None,
 ) -> Meta:
     """Generate verified steps for a today-question JSON file, then render it."""
     try:
@@ -64,4 +67,5 @@ def render_from_today(
         load_theme(Path(theme_path) if theme_path else None),
         Path(output_path),
         no_voice=no_voice,
+        voice_provider=voice_provider,
     )

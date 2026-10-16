@@ -36,6 +36,7 @@ class Theme:
     sizes: dict[str, int]
     motion: dict[str, float]
     branding: dict[str, object]
+    voice: dict[str, object]
 
 
 def load_theme(path: Path | None = None) -> Theme:
@@ -64,4 +65,5 @@ def load_theme(path: Path | None = None) -> Theme:
         fonts=fonts, colors=colors, sizes={key: int(value) for key, value in data.get("sizes", {}).items()},
         motion={key: float(value) if isinstance(value, (int, float)) else value for key, value in data.get("motion", {}).items()},
         branding=dict(data.get("branding", {})),
+        voice=dict(data.get("voice", {})),
     )

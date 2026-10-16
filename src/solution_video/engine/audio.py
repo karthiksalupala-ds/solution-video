@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import wave
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 
@@ -57,3 +58,50 @@ def write_wav(path: str | Path, samples: np.ndarray, sample_rate: int = 44_100) 
         output.setsampwidth(2)
         output.setframerate(sample_rate)
         output.writeframes((clipped * 32767).astype(np.int16).tobytes())
+
+
+def mix_voice_tracks(
+    effects_path: Path,
+    voice_tracks: Sequence[tuple[Path, float]],
+    output_path: Path,
+    duration_s: float,
+    sample_rate: int = 44_100,
+) -> None:
+    """Mix narration over SFX, ducking effects while speech is active."""
+    length = round(sample_rate * duration_s)
+    effects = _read_mono_wav(effects_path, sample_rate, length)
+    voice = np.zeros(length, dtype=np.float64)
+    speech_mask = np.zeros(length, dtype=bool)
+    for path, start_s in voice_tracks:
+        samples = _read_mono_wav(path, sample_rate)
+        start = max(0, round(start_s * sample_rate))
+        stop = min(length, start + len(samples))
+        if stop <= start:
+            continue
+        voice[start:stop] += samples[: stop - start]
+        speech_mask[start:stop] = True
+    effects[speech_mask] *= 0.25
+    mixed = effects + voice
+    peak = float(np.max(np.abs(mixed))) if len(mixed) else 0.0
+    if peak > 0.95:
+        mixed *= 0.95 / peak
+    write_wav(output_path, mixed, sample_rate)
+
+
+def _read_mono_wav(path: Path, sample_rate: int, length: int | None = None) -> np.ndarray:
+    with wave.open(str(path), "rb") as audio:
+        channels = audio.getnchannels()
+        width = audio.getsampwidth()
+        rate = audio.getframerate()
+        frames = audio.readframes(audio.getnframes())
+    if width != 2 or rate != sample_rate:
+        raise ValueError(f"Audio track {path} must be 16-bit PCM at {sample_rate} Hz")
+    samples = np.frombuffer(frames, dtype=np.int16).astype(np.float64) / 32768
+    if channels > 1:
+        samples = samples.reshape(-1, channels).mean(axis=1)
+    if length is not None:
+        if len(samples) < length:
+            samples = np.pad(samples, (0, length - len(samples)))
+        else:
+            samples = samples[:length]
+    return samples

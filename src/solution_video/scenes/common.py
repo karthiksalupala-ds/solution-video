@@ -28,6 +28,15 @@ def draw_footer(canvas: Canvas, fonts: FontBook, theme: Theme) -> None:
     footer = str(theme.branding.get("footer_text", ""))
     if footer:
         canvas.text((theme.canvas.width / 2, theme.canvas.height - 52), footer, fonts.get("regular", theme.sizes["footer_px"]), (*theme.colors["muted"], 210), anchor="mm")
+    attribution = str(theme.branding.get("voice_attribution_text", ""))
+    if attribution:
+        canvas.text(
+            (theme.canvas.width / 2, theme.canvas.height - 90),
+            attribution,
+            fonts.get("regular", max(16, theme.sizes["footer_px"] - 4)),
+            (*theme.colors["muted"], 210),
+            anchor="mm",
+        )
 
 
 def draw_header(canvas: Canvas, fonts: FontBook, theme: Theme, title: str, progress: float = 1.0) -> None:

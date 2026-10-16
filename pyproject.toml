@@ -21,6 +21,9 @@ solution-video = "solution_video.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"solution_video.voice" = ["normalization.json"]
+
 [tool.setuptools.data-files]
 themes = ["themes/*.json"]
 fonts = ["fonts/*.ttf", "fonts/OFL.txt"]
