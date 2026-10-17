@@ -1,0 +1,37 @@
+{
+  "day": 11,
+  "topic": "Speed, Time & Distance",
+  "difficulty": "Easy",
+  "time_sec": 50,
+  "question": "A car travels 180 km in 3 hours. What is its average speed in m/s?",
+  "options": [
+    "12.5",
+    "50/3 m/s",
+    "18",
+    "20"
+  ],
+  "correct_option": "B",
+  "final_answer": "50/3 m/s",
+  "solution": "Average speed = Distance / Time = 180 / 3 = 60 km/h. Convert km/h to m/s: 60 x 5/18 = 50/3 m/s.",
+  "expected_steps": {
+    "steps": [
+      {
+        "label": "Step 1: Average speed in km/h",
+        "lines": [
+          "180 / 3 = 60 km/h"
+        ],
+        "speech": "First, calculate average speed. Speed equals distance divided by time. One hundred eighty divided by three equals sixty kilometres per hour."
+      },
+      {
+        "label": "Step 2: Convert to m/s",
+        "lines": [
+          "60 x 5/18 = 50/3 m/s"
+        ],
+        "speech": "To convert kilometres per hour to metres per second, multiply by five over eighteen. Sixty times five over eighteen is fifty over three metres per second."
+      }
+    ],
+    "tip": "km/h to m/s: multiply by 5/18",
+    "answer": "50/3 m/s",
+    "answer_speech": "The correct answer is fifty over three metres per second."
+  }
+}

@@ -21,7 +21,22 @@
           "150 + 250 = 400 m"
         ],
         "speech": "Train platform ni cross cheyyali ante, train length plus platform length travel cheyyali. 150 plus 250 is 400 meters.",
-        "visual": "train_crossing"
+        "visual": {
+          "name": "train_crossing",
+          "data": {
+            "train_length_m": 150,
+            "platform_length_m": 250,
+            "crossing_time_s": 20,
+            "distance_unit": "m",
+            "time_unit": "s",
+            "train_label": "Train",
+            "platform_label": "Platform",
+            "front_marker_label": "Front enters",
+            "rear_marker_label": "Rear leaves",
+            "elapsed_label": "Elapsed",
+            "distance_label": "Distance covered"
+          }
+        }
       },
       {
         "label": "Step 2: Speed in m/s",

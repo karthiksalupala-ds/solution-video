@@ -14,7 +14,7 @@ class OutroScene:
         self.cta, self.theme, self.fonts = cta, theme, FontBook(theme)
 
     def render_frame(self, time_s: float):
-        canvas, theme = make_canvas(self.theme), self.theme
+        canvas, theme = make_canvas(self.theme, time_s), self.theme
         progress = min(1.0, out_back(progress_at(time_s, 0.2, 0.5)))
         layout = fit(theme, "bold", self.cta.display, 570, 270, 64, 3)
         draw_layout(canvas, self.fonts, theme, layout, 360, 560 - layout.height / 2, role="bold", alpha=round(255 * progress), anchor="ma")

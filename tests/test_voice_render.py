@@ -76,6 +76,7 @@ def test_render_mixes_mocked_voice_aligns_scenes_and_writes_safe_metadata(tmp_pa
     assert meta.voice_credits == 0
     assert meta.voice_characters > 0
     assert len(meta.voice_clips) == len(spec.steps) + 4
+    assert all(clip.duration_s == 0.35 for clip in meta.voice_clips)
     assert meta.duration_s == observed["duration_s"] <= 75
     assert observed["frame_size"] == (theme.canvas.width, theme.canvas.height)
     assert observed["audio_rate"] == 44_100

@@ -21,7 +21,15 @@
           "120 + 150 + 180 + 210 = 660"
         ],
         "speech": "First, mana four quarters sales anni add cheddam. 120 plus 150 plus 180 plus 210, total 660.",
-        "visual": "bar_chart"
+        "visual": {
+          "name": "bar_chart",
+          "data": {
+            "title": "Quarterly sales (Rs lakh)",
+            "values": [120, 150, 180, 210],
+            "labels": ["Q1", "Q2", "Q3", "Q4"],
+            "highlight_indices": [0, 1, 2, 3]
+          }
+        }
       },
       {
         "label": "Step 2: Average",

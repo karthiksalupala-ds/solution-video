@@ -13,10 +13,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageChops
 from pydantic import ValidationError
 
 from .engine.audio import AudioMixer, mix_voice_tracks, write_wav
+from .engine.easing import progress_at
 from .engine.encode import encode_frames
 from .engine.output import OutputValidationError, validate_output
 from .engine.theme import Theme, load_theme
@@ -34,7 +35,7 @@ from .llm.base import rate_limit_delay
 from .verify import verify
 from .scenes import AnswerScene, OutroScene, QuestionScene, StepScene, TipScene, TitleScene
 from .scenes.hello import HelloScene, HelloSpec
-from .scenes.common import draw_layout, fit
+from .scenes.common import draw_layout, fit, make_canvas
 from .engine.assets import FontBook
 from .engine.canvas import Canvas
 from .engine.text import reveal_words
@@ -70,15 +71,42 @@ class PlannedScene:
             self.event_positions if self.scene_duration_override is not None else (),
         ).cue_time(name)
 
-    def render_frame(self, time_s: float, theme: Theme):
-        duration = self.scene_duration_override or self.duration_s
-        mapped = SceneTiming(
+    def render_time(self, time_s: float) -> float:
+        return SceneTiming(
             float(self.base_duration_s),
-            duration,
+            self.scene_duration_override or self.duration_s,
             self.reveal_cues,
             self.event_positions if self.scene_duration_override is not None else (),
         ).to_base_time(time_s)
-        frame = self.scene.render_frame(mapped)
+
+    def plugin_time(self, time_s: float, theme: Theme) -> float | None:
+        if (
+            not isinstance(self.scene, StepScene)
+            or self.scene.step.visual is None
+            or self.scene_duration_override is None
+            or not any(cue.name == "label" for cue in self.reveal_cues)
+        ):
+            return None
+        start_s = self.cue_time("label")
+        hold_s = min(theme.voice.get("scene_padding_s", 0.45) / 2, 0.25)
+        animation_end_s = max(start_s + 0.1, self.scene_duration_override - hold_s)
+        preferred_duration_s = max(
+            theme.motion.get("plugin_train_duration_s", 3.0),
+            theme.motion.get("plugin_reveal_s", 1.4)
+            + theme.motion.get("plugin_stagger_s", 0.18) * 7,
+        )
+        progress = progress_at(time_s, start_s, animation_end_s - start_s)
+        return preferred_duration_s * progress
+
+    def render_frame(self, time_s: float, theme: Theme):
+        base_time_s = self.render_time(time_s)
+        if isinstance(self.scene, StepScene):
+            frame = self.scene.render_frame(
+                base_time_s,
+                visual_time_s=self.plugin_time(time_s, theme),
+            )
+        else:
+            frame = self.scene.render_frame(base_time_s)
         if theme.voice.get("captions") and self.caption_text and time_s < self.narration_duration_s:
             frame = _caption_frame(frame, self.caption_text, time_s, self.narration_duration_s, theme)
         return frame
@@ -129,11 +157,17 @@ def _event_positions(name: str, scene: object, base_duration_s: float) -> tuple[
     if name == "title":
         return (_cue("title", 0.45 / base_duration_s),)
     if name == "question":
-        question_event = _cue("question", 0.60 / base_duration_s)
+        question_event = _cue(
+            "question",
+            scene.theme.motion.get("question_option_start_s", 0.6) / base_duration_s,
+        )
         option_events = tuple(
             _cue(
                 f"option_{letter}",
-                (0.60 + option_index * float(scene.theme.motion["stagger_s"])) / base_duration_s,
+                (
+                    scene.theme.motion.get("question_option_start_s", 0.6)
+                    + option_index * float(scene.theme.motion["stagger_s"])
+                ) / base_duration_s,
             )
             for option_index, letter in enumerate("ABCD")
         )
@@ -141,12 +175,21 @@ def _event_positions(name: str, scene: object, base_duration_s: float) -> tuple[
     if name == "step":
         label_event = _cue("label", 0.50 / base_duration_s)
         line_events = tuple(
-            _cue(f"line_{line_index}", (0.55 + (line_index - 1) * 0.55) / base_duration_s)
+            _cue(
+                f"line_{line_index}",
+                (
+                    scene.theme.motion.get("step_line_start_s", 0.55)
+                    + (line_index - 1) * scene.theme.motion.get("step_line_stagger_s", 0.55)
+                ) / base_duration_s,
+            )
             for line_index in range(1, len(scene.step.lines) + 1)
         )
         return (label_event, *line_events)
     if name == "answer":
-        return (_cue("answer", 0.85 / base_duration_s),)
+        return (
+            _cue("answer", 0.85 / base_duration_s),
+            _cue("option", scene.theme.motion.get("answer_options_start_s", 1.55) / base_duration_s),
+        )
     if name == "tip":
         return (_cue("tip", 0.55 / base_duration_s),)
     if name == "outro":
@@ -182,6 +225,71 @@ def plan_scenes(spec: SolutionSpec, theme: Theme) -> tuple[PlannedScene, ...]:
             event_positions=_event_positions(item.name, item.scene, float(item.base_duration_s)),
         ))
     return tuple(with_cues)
+
+
+def _render_scene_frames(plan: tuple[PlannedScene, ...], theme: Theme):
+    transition_s = max(0.0, theme.motion.get("scene_transition_s", 0.35))
+    transition_frames = round(transition_s * theme.canvas.fps)
+    for index, item in enumerate(plan):
+        frame_count = max(1, round(item.duration_s * theme.canvas.fps))
+        overlap = min(transition_frames, frame_count - 1) if index + 1 < len(plan) else 0
+        next_start = plan[index + 1].render_frame(0.0, theme) if overlap else None
+        next_background = (
+            _scene_background(plan[index + 1].scene, 0.0, theme)
+            if overlap else None
+        )
+        overlap_start = frame_count - overlap
+        for frame_index in range(frame_count):
+            time_s = frame_index / theme.canvas.fps
+            frame = item.render_frame(time_s, theme)
+            if next_start is not None and frame_index >= overlap_start:
+                alpha = (frame_index - overlap_start + 1) / overlap
+                old_background = _scene_background(item.scene, item.render_time(time_s), theme)
+                frame = _crossfade_background_and_header(
+                    frame,
+                    old_background,
+                    next_start,
+                    next_background,
+                    alpha,
+                    max(120, theme.safe_margin_px * 3),
+                )
+            yield frame
+
+
+def _scene_background(scene: object, time_s: float, theme: Theme) -> Image.Image:
+    question = getattr(scene, "question", None)
+    seed = getattr(question, "day", getattr(scene, "step_index", 1))
+    return make_canvas(theme, time_s, int(seed)).final_rgb()
+
+
+def _crossfade_background_and_header(
+    outgoing: Image.Image,
+    outgoing_background: Image.Image,
+    incoming: Image.Image,
+    incoming_background: Image.Image,
+    alpha: float,
+    header_height: int,
+) -> Image.Image:
+    background = Image.blend(outgoing_background, incoming_background, alpha)
+    difference = ImageChops.difference(outgoing, outgoing_background).convert("L")
+    content_mask = difference.point([0] * 9 + [255] * 247)
+    frame = Image.composite(outgoing, background, content_mask)
+    header_height = min(header_height, frame.height)
+    background_header = background.crop((0, 0, frame.width, header_height))
+    if alpha < 0.5:
+        header = Image.blend(
+            outgoing.crop((0, 0, frame.width, header_height)),
+            background_header,
+            alpha * 2,
+        )
+    else:
+        header = Image.blend(
+            background_header,
+            incoming.crop((0, 0, frame.width, header_height)),
+            (alpha - 0.5) * 2,
+        )
+    frame.paste(header, (0, 0))
+    return frame
 
 
 def render(
@@ -225,10 +333,18 @@ def render(
     mixed_wav_path = output_path.with_suffix(".phase5.wav")
     mixer = AudioMixer(44_100, duration_s, spec.seed)
     cursor = 0.0
-    for item in plan:
-        mixer.add_tick(cursor + 0.25)
+    for index, item in enumerate(plan):
+        if index:
+            mixer.add_whoosh(max(0.0, cursor - theme.motion.get("scene_transition_s", 0.35)))
+        cue_names = (
+            [cue.name for cue in item.reveal_cues if cue.name.startswith("line_")]
+            + [cue.name for cue in item.reveal_cues if cue.name.startswith("option_")]
+        )
+        for cue_name in cue_names:
+            mixer.add_tick(cursor + item.cue_time(cue_name))
+        if item.name == "answer":
+            mixer.add_ding(cursor + item.cue_time("answer"))
         cursor += item.duration_s
-    mixer.add_ding(max(0.2, duration_s - 1.0))
     write_wav(wav_path, mixer.mix())
     try:
         offsets: list[tuple[Path, float]] = []
@@ -242,11 +358,7 @@ def render(
             final_audio = mixed_wav_path
         else:
             final_audio = wav_path
-        frames = (
-            item.render_frame(frame / theme.canvas.fps, theme)
-            for item in plan
-            for frame in range(max(1, round(item.duration_s * theme.canvas.fps)))
-        )
+        frames = _render_scene_frames(plan, theme)
         encode_frames(frames, theme.canvas.width, theme.canvas.height, theme.canvas.fps, final_audio, output_path, duration_s)
     finally:
         wav_path.unlink(missing_ok=True)
@@ -269,6 +381,7 @@ def render(
                 scene=f"step-{step_number}" if item.name == "step" else item.name,
                 provider=clip.provider,
                 model=clip.model,
+                duration_s=clip.duration_s,
                 characters=clip.characters,
                 credits=clip.credits,
             ))

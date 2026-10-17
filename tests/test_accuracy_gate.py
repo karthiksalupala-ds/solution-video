@@ -22,6 +22,13 @@ def test_gate_accepts_checked_example():
     assert verify(spec.question_input, spec).passed
 
 
+def test_gate_accepts_exact_car_speed_example():
+    payload = json.loads((ROOT / "examples" / "car_speed.json").read_text(encoding="utf-8"))
+    spec = SolutionSpec.from_payload(payload)
+
+    assert verify(spec.question_input, spec).passed
+
+
 def test_gate_blocks_wrong_answer_and_arithmetic():
     spec = _spec().model_copy(update={"answer": _spec().answer.model_copy(update={"display": "90 km/h"})})
     result = verify(spec.question_input, spec)

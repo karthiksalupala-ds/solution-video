@@ -23,15 +23,14 @@ ELEVENLABS_MODELS = ("eleven_v3", "eleven_multilingual_v2")
 ELEVENLABS_CREDITS_PER_CHARACTER = 1
 ELEVENLABS_TEST_CREDIT_LIMIT = 1500
 HF_API_NAME = "/generate_tts_audio"
-HF_API_PARAMETERS = (
-    "text_input",
-    "audio_prompt_path_input",
-    "exaggeration_input",
-    "temperature_input",
-    "seed_num_input",
-    "cfgw_input",
-    "vad_trim_input",
-)
+HF_PARAMETER_VALUES = {
+    "text_input": None,
+    "exaggeration_input": 0.5,
+    "temperature_input": 0.8,
+    "seed_num_input": 0,
+    "cfgw_input": 0.5,
+    "vad_trim_input": False,
+}
 
 
 class VoiceTestError(RuntimeError):
@@ -208,19 +207,47 @@ class HFSpaceProvider:
         reference_audio: Path,
         client_factory: Callable[..., Any] | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
+        file_handler: Callable[[Path], Any] | None = None,
+        request_limit: int | None = None,
+        request_pause_s: float = 0.0,
     ) -> None:
+        try:
+            reference_audio = reference_audio.expanduser().resolve(strict=True)
+        except OSError as exc:
+            raise VoiceTestError(
+                f"HF reference audio does not exist or cannot be resolved: {reference_audio}"
+            ) from exc
         if not reference_audio.is_file():
-            raise VoiceTestError(f"HF reference audio is missing: {reference_audio}")
+            raise VoiceTestError(f"HF reference audio is not a readable file: {reference_audio}")
+        try:
+            with reference_audio.open("rb") as audio_file:
+                audio_file.read(1)
+        except OSError as exc:
+            raise VoiceTestError(f"HF reference audio is not readable: {reference_audio}") from exc
+        if request_limit is not None and request_limit < 1:
+            raise VoiceTestError("HF_TTS_REQUEST_LIMIT must be at least 1")
+        if request_pause_s < 0:
+            raise VoiceTestError("HF_TTS_REQUEST_PAUSE_S must not be negative")
         if client_factory is None:
             try:
                 from gradio_client import Client
             except ImportError as exc:
                 raise VoiceTestError("Install the optional voice dependencies to use the HF Space") from exc
             client_factory = Client
+        if file_handler is None:
+            try:
+                from gradio_client import handle_file
+            except ImportError as exc:
+                raise VoiceTestError("Install gradio_client to upload HF reference audio") from exc
+            file_handler = handle_file
 
         self.model = space_id.rsplit("/", 1)[-1]
         self.reference_audio = reference_audio
         self.sleep_fn = sleep_fn
+        self.file_handler = file_handler
+        self.request_limit = request_limit
+        self.request_pause_s = request_pause_s
+        self.request_count = 0
         try:
             self.client = client_factory(
                 space_id,
@@ -228,41 +255,75 @@ class HFSpaceProvider:
                 verbose=False,
                 httpx_kwargs={"timeout": 600},
             )
-            api_description = self.client.view_api(print_info=False, return_format="str")
+            api_description = self.client.view_api(print_info=False, return_format="dict")
         except Exception as exc:
             raise VoiceTestError(f"Unable to inspect HF Space API: {_redact(str(exc), token)}") from exc
-        if not isinstance(api_description, str) or HF_API_NAME not in api_description:
+        if not isinstance(api_description, dict):
+            raise VoiceTestError("HF Space API schema was not returned in dictionary format")
+        endpoints = api_description.get("named_endpoints")
+        endpoint = endpoints.get(HF_API_NAME) if isinstance(endpoints, dict) else None
+        parameters = endpoint.get("parameters") if isinstance(endpoint, dict) else None
+        if not isinstance(parameters, list):
             raise VoiceTestError(f"HF Space API no longer exposes the inspected endpoint {HF_API_NAME}")
-        missing = [name for name in HF_API_PARAMETERS if name not in api_description]
+        labels = [parameter.get("label") for parameter in parameters if isinstance(parameter, dict)]
+        if len(labels) != len(parameters):
+            raise VoiceTestError("HF Space API schema contains an invalid parameter definition")
+        missing = [name for name in HF_PARAMETER_VALUES if name not in labels]
         if missing:
             raise VoiceTestError("HF Space API parameters changed; missing: " + ", ".join(missing))
+        self.parameters = tuple(parameters)
+        self.file_parameter_indices = tuple(
+            index for index, parameter in enumerate(self.parameters)
+            if _is_gradio_file_parameter(parameter)
+        )
+        if not self.file_parameter_indices:
+            raise VoiceTestError("HF Space API schema does not identify a file input for reference audio")
+        unknown = [
+            str(parameter.get("label"))
+            for parameter in self.parameters
+            if _is_gradio_file_parameter(parameter) is False
+            and parameter.get("label") not in HF_PARAMETER_VALUES
+        ]
+        if unknown:
+            raise VoiceTestError("HF Space API has unsupported input parameters: " + ", ".join(unknown))
 
     def synthesize(self, text: str) -> Path:
         last_error: Exception | None = None
         for attempt in range(2):
-            try:
-                result = self.client.predict(
-                    text,
-                    str(self.reference_audio),
-                    0.5,
-                    0.8,
-                    0,
-                    0.5,
-                    False,
-                    api_name=HF_API_NAME,
+            if self.request_limit is not None and self.request_count >= self.request_limit:
+                raise VoiceTestError(
+                    f"HF Space request limit reached ({self.request_limit}); stopping further synthesis"
                 )
+            if self.request_count:
+                self.sleep_fn(self.request_pause_s or (5.0 if last_error is not None else 0.0))
+            try:
+                arguments = []
+                for index, parameter in enumerate(self.parameters):
+                    if index in self.file_parameter_indices:
+                        arguments.append(self.file_handler(self.reference_audio))
+                    else:
+                        label = parameter["label"]
+                        arguments.append(
+                            text if label == "text_input" else HF_PARAMETER_VALUES[label]
+                        )
+                self.request_count += 1
+                result = self.client.predict(*arguments, api_name=HF_API_NAME)
                 audio_path = _gradio_output_path(result)
                 if not audio_path.is_file():
                     raise VoiceTestError("HF Space returned an audio path that does not exist")
                 return audio_path
             except Exception as exc:
                 last_error = exc
-                if attempt == 0:
-                    self.sleep_fn(5)
+                if attempt == 0 and (
+                    self.request_limit is None or self.request_count < self.request_limit
+                ):
+                    continue
+                break
         assert last_error is not None
         token = getattr(self.client, "token", "")
         raise VoiceTestError(
-            f"HF Space synthesis failed after one retry: {_redact(str(last_error), token)}"
+            f"HF Space synthesis failed after {self.request_count} request(s): "
+            f"{_redact_hf_error(str(last_error), token, self.reference_audio)}"
         ) from last_error
 
 
@@ -583,8 +644,22 @@ def _safe_filename(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9.-]+", "-", value).strip("-") or "model"
 
 
-def _redact(message: str, *secrets: str) -> str:
+def _is_gradio_file_parameter(parameter: dict[str, Any]) -> bool:
+    component = parameter.get("component")
+    if not isinstance(component, str):
+        return False
+    normalized = component.casefold().replace("_", "")
+    return "file" in normalized or normalized == "audio"
+
+
+def _redact(message: str, *secrets: Any) -> str:
     for secret in secrets:
         if secret:
-            message = message.replace(secret, "[REDACTED]")
+            message = message.replace(str(secret), "[REDACTED]")
     return message
+
+
+def _redact_hf_error(message: str, *secrets: str) -> str:
+    message = _redact(message, *secrets)
+    message = re.sub(r"(?i)\bBearer\s+\S+", "Bearer [REDACTED]", message)
+    return re.sub(r"\bhf_[A-Za-z0-9]{16,}\b", "[REDACTED]", message)

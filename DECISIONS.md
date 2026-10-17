@@ -81,3 +81,34 @@ Prompt packs 05 and 07 in docs/prompts are superseded by prompts_one_by_one/1-4.
 - Equation-line cues anchor to their first spoken numeric operand, and question option cues anchor to their spoken option. Reveals lead the boundary by 0.05 seconds, within the 0.15-second limit.
 - Question narration includes the options so each option can appear as it is spoken. Theme scene padding is 0.45 seconds.
 - `solution-video render --sync-report` prints expected word-boundary and actual reveal times for QA.
+- HF Space file inputs are identified from `Client.view_api(return_format="dict")` and wrapped with `gradio_client.handle_file`; the configured reference audio is resolved and checked before client use. HF warnings retain provider error details after credential redaction. `HF_TTS_REQUEST_LIMIT` and `HF_TTS_REQUEST_PAUSE_S` support bounded, paced runs.
+- Per-scene voice metadata includes synthesized clip duration.
+
+## Phase 3 Slice A: core scene motion and polish
+
+- Core scenes use theme-configured type sizes, card spacing, reveal timings, background glow/particles, and answer confetti confined above the option rows. Step results are visually emphasized, progress dots reflect the current step, and the answer scene highlights the correct option.
+- Scene boundaries crossfade the animated background and top header only; the outgoing scene's working content remains intact through the transition. Frame count, scene duration, cue positions, and narration offsets are unchanged.
+- Reveal SFX follow existing option/line/answer cue positions at reduced gains. Visual changes do not adjust narration text, duration, or provider timing.
+- Validation: `pytest -q` passed (141 tests). All four examples rendered with Edge TTS and passed answer verification and output checks: H.264/AAC, yuv420p, 720x1280 at 30 fps, under 16 MB and 75 seconds. Contact sheets are in `out/phase3/contact_sheets/`.
+
+## Phase 3 Slice B: optional topic visuals
+
+- Added input-driven `bar_chart` and `train_crossing` step visuals. Values, labels, highlighting, lengths, crossing duration, units, and marker copy come from each step's `visual.data`; plugin sizing, colors, and animation pacing come from the theme.
+- Unknown plugins, invalid data, and layouts that cannot preserve readable calculation cards emit warnings and leave the generic step scene available. Steps without a visual continue to render unchanged.
+- Contact-sheet review found three improvements: anchor front-entry/rear-exit markers to the platform boundaries and keep labels inside the frame; shorten the count-up and train animations so they finish within their narration scene; preserve enough equation-card height for multi-line steps before drawing a plugin. These were implemented, with tests covering visual animation, example wiring, and generic fallback.
+- Validation: `pytest -q` passed (149 tests). All four examples rendered with Edge TTS, `answer_verified:true`, H.264/AAC, yuv420p, 720x1280 at 30 fps, and under 16 MB / 75 seconds. `speed_train` and `di_average` exercise the plugins; `time_work` and `percent_increase` validate the unchanged generic path. Final outputs and contact sheets are under `out/phase3/`.
+
+## Phase 3 Slice B motion revision
+
+- Revised the train visual into a scene-driven crossing: the train moves from front-at-entry to rear-at-exit, while a distance counter, elapsed time, platform progress, markers, rail, train details, and subdued skyline animate from the supplied dimensions. The distance heading is input-provided; motion, sizes, and palette remain theme-driven.
+- Visual review identified three issues and fixes: train movement compressed after cue-time remapping, so plugin animation now uses scene-local time anchored to the step-label cue without changing narration or reveal cues; the crossing diagram was too bare, so it now has a progress HUD, physical platform markers, rail/train details, and skyline; integer DI values briefly displayed noisy decimals during count-up, so integer inputs animate as integers.
+- The DI chart now grows bars in a staggered sequence over guide lines, with selected bars visibly outlined and pulsing; non-integer source values retain decimal count-up formatting.
+- Validation: `pytest -q` passed (151 tests). All four Edge TTS renders have `answer_verified:true` and meet H.264/AAC, yuv420p, 720x1280 at 30 fps, under 16 MB and 75 seconds. Durations/sizes: `speed_train` 21.78 s / 794,880 B; `time_work` 19.51 s / 737,374 B; `di_average` 14.27 s / 586,396 B; `percent_increase` 15.15 s / 556,804 B. Refreshed contact sheets are in `out/phase3/contact_sheets/`.
+- This remains deterministic local motion graphics; no generated-footage provider was added. Narration text, clip timing, cue positions, and provider behavior were not changed.
+
+## v0.2.0 release qualification
+
+- Corrected the train-crossing geometry so the train travels the full train-plus-platform distance before its rear clears the platform. The car-speed example now uses exact fractions and the generic visual path.
+- Validation: `python -m pytest -q` passed (152 tests); `python -m compileall -q src tests` and `git diff --check` passed; `python -m pip wheel . --no-deps` built `solution_video-0.2.0-py3-none-any.whl`.
+- Rendered all five examples without voice or live provider calls. Every output has `answer_verified:true`, H.264/AAC, yuv420p, 720x1280 at 30 fps, duration under 75 seconds, and size under 16 MiB. Durations/sizes: `speed_train` 35.4 s / 859,780 B; `time_work` 41.5 s / 909,596 B; `di_average` 30.9 s / 794,456 B; `percent_increase` 29.2 s / 660,561 B; `car_speed` 29.6 s / 669,597 B. These release-check outputs are in ignored `out/release-check/`.
+- `.env` is ignored and untracked. The remote `main` is unchanged at `1bc300c`, and no remote `v0.2.0` tag exists; the release has not yet been committed or pushed.

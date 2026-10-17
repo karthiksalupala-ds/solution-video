@@ -185,6 +185,66 @@ def test_provider_failure_falls_back_to_edge_and_surfaces_warning(tmp_path):
     assert any("HF cold start failed" in warning for warning in result.warnings)
 
 
+def test_hf_space_error_text_is_preserved_in_runtime_warnings(tmp_path):
+    def factory(provider_name, _environment, _temp_dir):
+        assert provider_name == "hf_space"
+
+        class FailedSpace:
+            def synthesize(self, _text):
+                raise VoiceTestError("HTTP 400: 'meta' field must be explicitly provided")
+
+        return FailedSpace()
+
+    result = synthesize_voice(
+        (VoiceInput("question", "A question."), VoiceInput("answer", "An answer.")),
+        environment={
+            "HF_TTS_SPACE": "owner/mock-space",
+            "HF_TOKEN": "mock-token",
+            "VOICE_PROVIDER_ORDER": "hf_space,none",
+        },
+        provider_override="hf_space",
+        cache_dir=tmp_path / "cache",
+        audio_processor=_processor,
+        provider_factory=factory,
+    )
+
+    assert result.provider == "none"
+    assert any("HTTP 400" in warning and "'meta' field must be explicitly provided" in warning
+               for warning in result.warnings), result.warnings
+
+
+def test_hf_factory_resolves_reference_and_configures_request_budget(tmp_path, monkeypatch):
+    reference = tmp_path / "reference.wav"
+    reference.write_bytes(b"audio")
+    observed = {}
+
+    class FakeSpace:
+        def __init__(self, space_id, token, resolved_reference, **kwargs):
+            observed.update({
+                "space_id": space_id,
+                "token": token,
+                "reference": resolved_reference,
+                **kwargs,
+            })
+
+    monkeypatch.setattr(runtime, "HFSpaceProvider", FakeSpace)
+    runtime._make_provider(
+        "hf_space",
+        {
+            "HF_TTS_SPACE": "owner/mock-space",
+            "HF_TOKEN": "mock-token",
+            "HF_TTS_REFERENCE_AUDIO": str(reference),
+            "HF_TTS_REQUEST_LIMIT": "2",
+            "HF_TTS_REQUEST_PAUSE_S": "5",
+        },
+        tmp_path,
+    )
+
+    assert observed["reference"] == reference.resolve()
+    assert observed["request_limit"] == 2
+    assert observed["request_pause_s"] == 5
+
+
 def test_elevenlabs_checks_remaining_credits_before_synthesis(tmp_path):
     session = FakeSession({"character_count": 200, "character_limit": 10_000})
     calls = []

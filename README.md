@@ -23,7 +23,7 @@ pytest -q
 Install a tagged release from GitHub:
 
 ```bash
-python -m pip install "git+https://github.com/<owner>/solution-video.git@v0.1.0"
+python -m pip install "git+https://github.com/<owner>/solution-video.git@v0.2.0"
 ```
 
 ## Quick start
@@ -75,7 +75,7 @@ The accuracy gate checks the selected option and answer, evaluates arithmetic li
 
 ## Themes and plugins
 
-Themes are JSON files in [themes/](themes); pass one with `--theme path/to/theme.json`. Fonts ship with the package. Scene renderers live in `src/solution_video/scenes/`; optional visual plugins live in `src/solution_video/plugins/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the extension guide.
+Themes are JSON files in [themes/](themes); pass one with `--theme path/to/theme.json`. Fonts ship with the package. Scene renderers live in `src/solution_video/scenes/`; optional visual plugins live in `src/solution_video/plugins/`. A step may include `visual: {"name": ..., "data": {...}}`: `bar_chart` reads `values`, `labels`, optional `highlight_indices`, and `title`; `train_crossing` reads train/platform lengths, crossing time, units, and display labels including `distance_label`. The train visual stages the platform entry/exit, travelled-distance counter, and elapsed time from those input values. Plugin data is supplied by the input, while motion and sizing come from the theme. A missing/unknown plugin or invalid data warns and leaves the generic step visible. See [CONTRIBUTING.md](CONTRIBUTING.md) for the extension guide.
 
 ## Voice listening test
 
@@ -99,11 +99,11 @@ The three Edge voices are `te-IN-ShrutiNeural`, `te-IN-MohanNeural`, and `en-IN-
 
 ## Voice rendering
 
-The default provider order is `hf_space,edge_tts,none`. HF uses `HF_TTS_SPACE`, `HF_TOKEN`, and the user-owned reference recording configured by `HF_TTS_REFERENCE_AUDIO`; Edge uses `EDGE_TTS_VOICE` (default `en-IN-NeerjaNeural`) and `EDGE_TTS_RATE` (default `-8%`). Configure the chain with `VOICE_PROVIDER_ORDER`. `--voice-provider` selects a provider for one run; `--voice-provider none` disables TTS. The chosen narration language is `SPEECH_LANGUAGE_MODE` (default `english`).
+The default provider order is `hf_space,edge_tts,none`. HF uses `HF_TTS_SPACE`, `HF_TOKEN`, and the user-owned reference recording configured by `HF_TTS_REFERENCE_AUDIO`; the recording is resolved to an absolute readable file and uploaded with `gradio_client.handle_file` based on the file component reported by `view_api()`. Optional `HF_TTS_REQUEST_LIMIT` caps Space synthesis requests per render, and `HF_TTS_REQUEST_PAUSE_S` sets a pause between requests. Edge uses `EDGE_TTS_VOICE` (default `en-IN-NeerjaNeural`) and `EDGE_TTS_RATE` (default `-8%`). Configure the chain with `VOICE_PROVIDER_ORDER`. `--voice-provider` selects a provider for one run; `--voice-provider none` disables TTS. The chosen narration language is `SPEECH_LANGUAGE_MODE` (default `english`).
 
 ElevenLabs is opt-in with `--voice-provider elevenlabs`. Set `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, and optionally `ELEVENLABS_MODEL_ID` (default `eleven_multilingual_v2`). Before every synthesis request, the renderer reads the documented [subscription endpoint](https://elevenlabs.io/docs/api-reference/user/subscription/get) and requires remaining characters minus the request estimate to stay at or above `ELEVENLABS_RESERVE_CREDITS` (default `1500`). If usage cannot be checked, ElevenLabs is skipped. Set `VOICE_ELEVENLABS_FALLBACK=1` only if an ElevenLabs failure may continue to the configured providers. Audio already in the local cache makes no provider request and uses zero credits. Check the account plan's commercial-use rights before publishing; an attribution footer does not grant rights.
 
-`--dry-run` prints the selected provider/model and estimated characters/credits without contacting TTS providers. `--sync-report` prints expected Edge TTS word-boundary times beside actual scene reveal times; other providers use proportional cue timing. Edge word timings are cached alongside audio. The default theme uses 0.45 seconds of scene padding. `solution.meta.json` records provider, model, language mode, characters, credits, and per-scene usage, never credentials. The default theme enables the small `Voice: ElevenLabs` attribution on public-facing outputs using ElevenLabs audio; theme `voice.captions` optionally enables word-progressive captions. FFmpeg trims silence and normalizes each clip before mixing; SFX are ducked under speech. Scene durations are overridden by clip length plus theme padding and are constrained to 75 seconds (with at most a small pitch-preserving speech speed-up).
+`--dry-run` prints the selected provider/model and estimated characters/credits without contacting TTS providers. `--sync-report` prints expected Edge TTS word-boundary times beside actual scene reveal times; other providers use proportional cue timing. Edge word timings are cached alongside audio. The default theme uses 0.45 seconds of scene padding. `solution.meta.json` records provider, model, language mode, characters, credits, duration per synthesized scene, and warnings, never credentials. The default theme enables the small `Voice: ElevenLabs` attribution on public-facing outputs using ElevenLabs audio; theme `voice.captions` optionally enables word-progressive captions. FFmpeg trims silence and normalizes each clip before mixing; SFX are ducked under speech. Scene durations are overridden by clip length plus theme padding and are constrained to 75 seconds (with at most a small pitch-preserving speech speed-up).
 
 ## Another bot calling the generator
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "solution-video"
-version = "0.1.0"
+version = "0.2.0"
 description = "JSON-driven solution video generator (Tanglish voice-over) for aptitude content"
 requires-python = ">=3.10"
 license = "Apache-2.0"

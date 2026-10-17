@@ -9,7 +9,7 @@ on:
         default: examples/di_average.json
         type: string
       voice:
-        description: "Request speech synthesis (not available in v0.1.0)"
+        description: "Request speech synthesis"
         required: true
         default: "off"
         type: choice

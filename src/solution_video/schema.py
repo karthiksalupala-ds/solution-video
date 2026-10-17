@@ -101,6 +101,7 @@ class VoiceClipMeta(BaseModel):
     scene: str
     provider: str
     model: str
+    duration_s: float = Field(gt=0)
     characters: int = Field(ge=0)
     credits: int = Field(ge=0)
 
@@ -160,7 +161,7 @@ class Meta(BaseModel):
     voice_credits: int = Field(default=0, ge=0)
     voice_clips: list[VoiceClipMeta] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    version: str = "0.1.0"
+    version: str = "0.2.0"
 
 
 def _normalise_answer(value: str) -> str:

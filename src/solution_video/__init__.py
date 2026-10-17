@@ -1,6 +1,6 @@
 """solution-video: deterministic JSON-driven video rendering."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .api import render, render_from_today
 from .schema import Meta

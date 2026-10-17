@@ -14,7 +14,7 @@ class TipScene:
         self.tip, self.theme, self.fonts = tip, theme, FontBook(theme)
 
     def render_frame(self, time_s: float):
-        canvas, theme = make_canvas(self.theme), self.theme
+        canvas, theme = make_canvas(self.theme, time_s), self.theme
         progress = out_cubic(progress_at(time_s, 0.1, 0.45))
         draw_header(canvas, self.fonts, theme, "QUICK TIP", progress)
         canvas.rounded_rect((70, 370, 650, 760), 36, (*theme.colors["warn"], round(205 * progress)))

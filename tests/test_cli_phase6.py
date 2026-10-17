@@ -105,7 +105,7 @@ def test_voice_test_previews_approved_variants_without_network(capsys):
 def test_package_version_is_semantic():
     from solution_video import __version__
 
-    assert __version__ == "0.1.0"
+    assert __version__ == "0.2.0"
 
 
 def test_public_render_from_today_returns_typed_meta(monkeypatch, tmp_path):

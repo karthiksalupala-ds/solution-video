@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -303,11 +304,32 @@ def _make_provider(provider_name: str, environment: dict[str, str], temp_dir: Pa
     if provider_name == "hf_space":
         if not environment.get("HF_TOKEN", "").strip():
             raise VoiceTestError("HF_TOKEN is not configured")
-        reference = Path(environment.get("HF_TTS_REFERENCE_AUDIO", "local_assets/ref_voice.wav"))
+        reference = Path(
+            environment.get("HF_TTS_REFERENCE_AUDIO", "local_assets/ref_voice.wav")
+        ).expanduser()
+        if not reference.is_absolute():
+            reference = Path.cwd() / reference
+        reference = reference.resolve()
+        request_limit_value = environment.get("HF_TTS_REQUEST_LIMIT", "").strip()
+        request_limit = (
+            _nonnegative_int(request_limit_value, "HF_TTS_REQUEST_LIMIT")
+            if request_limit_value
+            else None
+        )
+        if request_limit == 0:
+            raise VoiceRuntimeError("HF_TTS_REQUEST_LIMIT must be at least 1")
+        try:
+            request_pause_s = float(environment.get("HF_TTS_REQUEST_PAUSE_S", "0"))
+        except ValueError as exc:
+            raise VoiceRuntimeError("HF_TTS_REQUEST_PAUSE_S must be a non-negative number") from exc
+        if not math.isfinite(request_pause_s) or request_pause_s < 0:
+            raise VoiceRuntimeError("HF_TTS_REQUEST_PAUSE_S must be a non-negative number")
         return HFSpaceProvider(
             environment["HF_TTS_SPACE"].strip(),
             environment["HF_TOKEN"].strip(),
             reference,
+            request_limit=request_limit,
+            request_pause_s=request_pause_s,
         )
     if provider_name == "edge_tts":
         voice = environment.get("EDGE_TTS_VOICE", EDGE_VOICES[-1]).strip()

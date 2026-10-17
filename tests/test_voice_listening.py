@@ -85,6 +85,24 @@ def test_hf_adapter_uses_inspected_schema_own_audio_and_retries_once(tmp_path):
     returned_audio.write_bytes(b"audio")
     clients: list[object] = []
     delays: list[float] = []
+    file_inputs = []
+
+    def api_schema(file_label="reference_audio_input"):
+        return {
+            "named_endpoints": {
+                "/generate_tts_audio": {
+                    "parameters": [
+                        {"label": "text_input", "component": "Textbox"},
+                        {"label": file_label, "component": "File"},
+                        {"label": "exaggeration_input", "component": "Slider"},
+                        {"label": "temperature_input", "component": "Slider"},
+                        {"label": "seed_num_input", "component": "Number"},
+                        {"label": "cfgw_input", "component": "Slider"},
+                        {"label": "vad_trim_input", "component": "Checkbox"},
+                    ]
+                }
+            }
+        }
 
     class FakeClient:
         token = "secret-token"
@@ -96,30 +114,186 @@ def test_hf_adapter_uses_inspected_schema_own_audio_and_retries_once(tmp_path):
             clients.append(self)
 
         def view_api(self, **kwargs):
-            return (
-                "api_name=/generate_tts_audio "
-                "text_input audio_prompt_path_input exaggeration_input "
-                "temperature_input seed_num_input cfgw_input vad_trim_input"
-            )
+            assert kwargs == {"print_info": False, "return_format": "dict"}
+            return api_schema()
 
         def predict(self, *args, **kwargs):
             self.calls += 1
-            assert args[1] == str(ref_audio)
+            assert isinstance(args[1], dict)
+            assert args[1]["path"] == str(ref_audio.resolve())
+            assert args[1]["meta"] == {"_type": "gradio.FileData"}
             assert kwargs["api_name"] == "/generate_tts_audio"
             if self.calls == 1:
                 raise TimeoutError("cold start")
             return str(returned_audio)
 
+    def file_handler(path):
+        file_data = {"path": str(path), "meta": {"_type": "gradio.FileData"}}
+        file_inputs.append(file_data)
+        return file_data
+
     adapter = HFSpaceProvider(
         "owner/space", "secret-token", ref_audio,
         client_factory=FakeClient, sleep_fn=delays.append,
+        file_handler=file_handler,
     )
 
     assert adapter.synthesize("test") == returned_audio
     assert clients[0].kwargs["token"] == "secret-token"
     assert clients[0].kwargs["httpx_kwargs"] == {"timeout": 600}
     assert clients[0].calls == 2
-    assert delays == [5]
+    assert file_inputs == [
+        {"path": str(ref_audio.resolve()), "meta": {"_type": "gradio.FileData"}},
+        {"path": str(ref_audio.resolve()), "meta": {"_type": "gradio.FileData"}},
+    ]
+    assert delays == [5.0]
+
+
+def test_hf_adapter_uses_schema_to_find_file_input_not_a_guessed_name(tmp_path):
+    ref_audio = tmp_path / "ref.wav"
+    ref_audio.write_bytes(b"own voice")
+    returned_audio = tmp_path / "returned.wav"
+    returned_audio.write_bytes(b"audio")
+    received = []
+
+    class FakeClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def view_api(self, **_kwargs):
+            return {
+                "named_endpoints": {
+                    "/generate_tts_audio": {
+                        "parameters": [
+                            {"label": "text_input", "component": "Textbox"},
+                            {"label": "prompt_audio", "component": "Audio"},
+                            {"label": "exaggeration_input", "component": "Slider"},
+                            {"label": "temperature_input", "component": "Slider"},
+                            {"label": "seed_num_input", "component": "Number"},
+                            {"label": "cfgw_input", "component": "Slider"},
+                            {"label": "vad_trim_input", "component": "Checkbox"},
+                        ]
+                    }
+                }
+            }
+
+        def predict(self, *args, **_kwargs):
+            received.append(args[1])
+            return str(returned_audio)
+
+    adapter = HFSpaceProvider(
+        "owner/space",
+        "token",
+        ref_audio,
+        client_factory=FakeClient,
+        file_handler=lambda path: {"path": str(path), "meta": {"_type": "gradio.FileData"}},
+    )
+
+    assert adapter.synthesize("text") == returned_audio
+    assert isinstance(received[0], dict)
+    assert received[0]["meta"]["_type"] == "gradio.FileData"
+
+
+def test_hf_adapter_request_limit_is_shared_across_scenes(tmp_path):
+    ref_audio = tmp_path / "ref.wav"
+    ref_audio.write_bytes(b"own voice")
+    returned_audio = tmp_path / "returned.wav"
+    returned_audio.write_bytes(b"audio")
+    calls = []
+    delays = []
+
+    class FakeClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def view_api(self, **_kwargs):
+            return {
+                "named_endpoints": {
+                    "/generate_tts_audio": {
+                        "parameters": [
+                            {"label": "text_input", "component": "Textbox"},
+                            {"label": "audio_prompt_path_input", "component": "File"},
+                            {"label": "exaggeration_input", "component": "Slider"},
+                            {"label": "temperature_input", "component": "Slider"},
+                            {"label": "seed_num_input", "component": "Number"},
+                            {"label": "cfgw_input", "component": "Slider"},
+                            {"label": "vad_trim_input", "component": "Checkbox"},
+                        ]
+                    }
+                }
+            }
+
+        def predict(self, *_args, **_kwargs):
+            calls.append(1)
+            return str(returned_audio)
+
+    adapter = HFSpaceProvider(
+        "owner/space",
+        "token",
+        ref_audio,
+        client_factory=FakeClient,
+        sleep_fn=delays.append,
+        file_handler=lambda path: {"path": str(path), "meta": {"_type": "gradio.FileData"}},
+        request_limit=2,
+        request_pause_s=3,
+    )
+
+    assert adapter.synthesize("first") == returned_audio
+    assert adapter.synthesize("second") == returned_audio
+    with pytest.raises(VoiceTestError, match="request limit reached"):
+        adapter.synthesize("third")
+    assert len(calls) == 2
+    assert delays == [3]
+
+
+def test_hf_adapter_surfaces_sanitized_space_error_after_retry(tmp_path):
+    ref_audio = tmp_path / "ref.wav"
+    ref_audio.write_bytes(b"own voice")
+    delays = []
+
+    class FakeClient:
+        token = "private-token"
+
+        def __init__(self, *_args, **_kwargs):
+            self.calls = 0
+
+        def view_api(self, **_kwargs):
+            return {
+                "named_endpoints": {
+                    "/generate_tts_audio": {
+                        "parameters": [
+                            {"label": "text_input", "component": "Textbox"},
+                            {"label": "audio_prompt_path_input", "component": "File"},
+                            {"label": "exaggeration_input", "component": "Slider"},
+                            {"label": "temperature_input", "component": "Slider"},
+                            {"label": "seed_num_input", "component": "Number"},
+                            {"label": "cfgw_input", "component": "Slider"},
+                            {"label": "vad_trim_input", "component": "Checkbox"},
+                        ]
+                    }
+                }
+            }
+
+        def predict(self, *_args, **_kwargs):
+            self.calls += 1
+            raise RuntimeError("HTTP 400: 'meta' field must be explicitly provided; private-token")
+
+    adapter = HFSpaceProvider(
+        "owner/space",
+        "private-token",
+        ref_audio,
+        client_factory=FakeClient,
+        sleep_fn=delays.append,
+        file_handler=lambda path: {"path": str(path), "meta": {"_type": "gradio.FileData"}},
+        request_limit=2,
+    )
+    with pytest.raises(VoiceTestError) as error:
+        adapter.synthesize("text")
+    assert "HTTP 400" in str(error.value)
+    assert "'meta' field must be explicitly provided" in str(error.value)
+    assert "private-token" not in str(error.value)
+    assert adapter.client.calls == 2
+    assert delays == [5.0]
 
 
 def test_hf_adapter_rejects_uninspected_or_changed_endpoint(tmp_path):
@@ -131,10 +305,23 @@ def test_hf_adapter_rejects_uninspected_or_changed_endpoint(tmp_path):
             pass
 
         def view_api(self, **kwargs):
-            return "api_name=/different"
+            return {"named_endpoints": {"/different": {"parameters": []}}}
 
     with pytest.raises(VoiceTestError, match="no longer exposes"):
         HFSpaceProvider("owner/space", "secret", ref_audio, client_factory=FakeClient)
+
+
+def test_hf_adapter_rejects_missing_reference_audio_before_connecting(tmp_path):
+    def no_client(*_args, **_kwargs):
+        pytest.fail("missing reference audio must be detected before client construction")
+
+    with pytest.raises(VoiceTestError, match="does not exist or cannot be resolved"):
+        HFSpaceProvider(
+            "owner/space",
+            "secret",
+            tmp_path / "missing.wav",
+            client_factory=no_client,
+        )
 
 
 def test_edge_adapter_is_mocked_and_returns_audio_file(tmp_path):

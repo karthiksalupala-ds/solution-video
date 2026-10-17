@@ -34,20 +34,20 @@ class AudioMixer:
         noise = self.rng.standard_normal(length)
         smooth = np.convolve(noise, np.ones(10) / 10, mode="same")
         envelope = np.sin(np.linspace(0, math.pi, length)) ** 2
-        self._add(start_s, smooth * envelope, 0.055)
+        self._add(start_s, smooth * envelope, 0.035)
 
     def add_tick(self, start_s: float) -> None:
         time = np.arange(round(self.sample_rate * 0.04)) / self.sample_rate
-        self._add(start_s, np.sin(2 * math.pi * 1500 * time) * np.exp(-75 * time), 0.13)
+        self._add(start_s, np.sin(2 * math.pi * 1500 * time) * np.exp(-75 * time), 0.08)
 
     def add_ding(self, start_s: float) -> None:
         time = np.arange(round(self.sample_rate * 0.75)) / self.sample_rate
         signal = (np.sin(2 * math.pi * 880 * time) + 0.45 * np.sin(2 * math.pi * 1320 * time)) * np.exp(-4 * time)
-        self._add(start_s, signal, 0.12)
+        self._add(start_s, signal, 0.08)
 
     def mix(self) -> np.ndarray:
         peak = float(np.max(np.abs(self.samples)))
-        return self.samples if peak == 0 else self.samples / peak * 0.80
+        return self.samples if peak == 0 else self.samples / peak * 0.32
 
 
 def write_wav(path: str | Path, samples: np.ndarray, sample_rate: int = 44_100) -> None:

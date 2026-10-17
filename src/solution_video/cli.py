@@ -317,6 +317,8 @@ def _load_local_env() -> None:
             "HF_TOKEN",
             "HF_TTS_SPACE",
             "HF_TTS_REFERENCE_AUDIO",
+            "HF_TTS_REQUEST_LIMIT",
+            "HF_TTS_REQUEST_PAUSE_S",
             "ELEVENLABS_API_KEY",
             "ELEVENLABS_VOICE_ID",
             "ELEVENLABS_MODEL_ID",
