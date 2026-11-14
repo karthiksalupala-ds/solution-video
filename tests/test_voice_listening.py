@@ -308,7 +308,13 @@ def test_hf_adapter_rejects_uninspected_or_changed_endpoint(tmp_path):
             return {"named_endpoints": {"/different": {"parameters": []}}}
 
     with pytest.raises(VoiceTestError, match="no longer exposes"):
-        HFSpaceProvider("owner/space", "secret", ref_audio, client_factory=FakeClient)
+        HFSpaceProvider(
+            "owner/space",
+            "secret",
+            ref_audio,
+            client_factory=FakeClient,
+            file_handler=lambda path: {"path": str(path), "meta": {"_type": "gradio.FileData"}},
+        )
 
 
 def test_hf_adapter_rejects_missing_reference_audio_before_connecting(tmp_path):
