@@ -19,6 +19,7 @@ def render(
     no_voice: bool = False,
     seed: int | None = None,
     voice_provider: str | None = None,
+    narration_style: str | None = None,
 ) -> Meta:
     """Render a validated solution JSON file and return its output metadata."""
     return render_from_file(
@@ -28,6 +29,7 @@ def render(
         no_voice=no_voice,
         seed=seed,
         voice_provider=voice_provider,
+        narration_style=narration_style,
     )
 
 
@@ -41,6 +43,7 @@ def render_from_today(
     seed: int | None = None,
     speech_language_mode: str | None = None,
     voice_provider: str | None = None,
+    narration_style: str | None = None,
 ) -> Meta:
     """Generate verified steps for a today-question JSON file, then render it."""
     try:
@@ -57,7 +60,12 @@ def render_from_today(
         llm = GeminiProvider()
     else:
         raise ValueError("provider must be 'groq' or 'gemini'")
-    spec = generate_steps(question, llm, speech_language_mode=speech_language_mode)
+    spec = generate_steps(
+        question,
+        llm,
+        speech_language_mode=speech_language_mode,
+        narration_style=narration_style,
+    )
     if seed is not None:
         if not 0 <= seed <= 2**31 - 1:
             raise ValueError("seed must be between 0 and 2147483647")
@@ -68,4 +76,5 @@ def render_from_today(
         Path(output_path),
         no_voice=no_voice,
         voice_provider=voice_provider,
+        narration_style=narration_style,
     )

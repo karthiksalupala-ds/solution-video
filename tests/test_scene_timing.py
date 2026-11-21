@@ -14,6 +14,7 @@ from solution_video.pipeline import (
 )
 from solution_video.schema import SolutionSpec
 from solution_video.voice.runtime import VoiceClip, VoiceRender, VoiceRuntimeError
+from solution_video.engine.output import OutputValidationError
 
 
 class FixedScene:
@@ -63,12 +64,7 @@ def test_planned_reveal_cues_are_relative_and_ordered_by_narration_words():
     question = next(item for item in plan if item.name == "question")
     step = next(item for item in plan if item.name == "step")
 
-    assert [cue.name for cue in question.reveal_cues] == [
-        "question", "option_A", "option_B", "option_C", "option_D",
-    ]
-    assert [cue.progress for cue in question.reveal_cues] == sorted(
-        cue.progress for cue in question.reveal_cues
-    )
+    assert [cue.name for cue in question.reveal_cues] == ["question"]
     line_cues = [cue for cue in step.reveal_cues if cue.name.startswith("line_")]
     assert line_cues
     assert [cue.progress for cue in line_cues] == sorted(cue.progress for cue in line_cues)
@@ -86,8 +82,7 @@ def test_animation_events_begin_at_their_narration_cues():
     step_events = {event.name: event.progress * step.base_duration_s for event in step.event_positions}
 
     assert question_events["question"] == pytest.approx(0.60)
-    assert question_events["option_A"] == pytest.approx(0.60)
-    assert question_events["option_B"] == pytest.approx(0.72)
+    assert question_events["question"] == pytest.approx(0.60)
     assert step_events["line_1"] == pytest.approx(0.55)
 
 
@@ -109,7 +104,7 @@ def test_voice_reveal_cues_land_inside_the_spoken_clip_before_padding():
         assert max(scene.cue_time(cue.name) for cue in scene.reveal_cues) <= 0.35
 
 
-def test_edge_word_boundaries_align_equations_without_narrating_question_options():
+def test_edge_word_boundaries_align_equations_and_short_question_cue():
     import json
 
     root = Path(__file__).resolve().parents[1]
@@ -118,11 +113,14 @@ def test_edge_word_boundaries_align_equations_without_narrating_question_options
     step_index = next(index for index, item in enumerate(plan) if item.name == "step")
     question_index = next(index for index, item in enumerate(plan) if item.name == "question")
     step_boundaries = (("one", 0.8), ("hundred", 0.85), ("fifty", 0.9))
-    clips = [
-        VoiceClip(Path(f"{index}.wav"), 10.0, "edge_tts", "voice", 10, 0, "speech")
-        if index != question_index else None
-        for index in range(len(plan))
-    ]
+    clips = []
+    for index, item in enumerate(plan):
+        if item.name == "question":
+            clips.append(VoiceClip(Path("question.wav"), 5.0, "edge_tts", "voice", 8, 0, "speech"))
+        elif item.name == "title":
+            clips.append(VoiceClip(Path("title.wav"), 3.0, "edge_tts", "voice", 10, 0, "speech"))
+        else:
+            clips.append(VoiceClip(Path(f"{index}.wav"), 10.0, "edge_tts", "voice", 10, 0, "speech"))
     clips[step_index] = VoiceClip(
         Path("step.wav"), 10.0, "edge_tts", "voice", 10, 0, "speech", step_boundaries
     )
@@ -136,7 +134,7 @@ def test_edge_word_boundaries_align_equations_without_narrating_question_options
 
     report = format_sync_report(synchronized, voice)
     assert "step/line_1 |" in report
-    assert "question/option_A | not narrated" in report
+    assert "question/question |" in report
 
 
 def test_other_providers_keep_proportional_cue_timing():
@@ -172,53 +170,31 @@ def test_retiming_again_does_not_accumulate_cue_scaling():
     assert shortened[0].cue_time("line_1") == 0.8
 
 
-def test_voice_duration_removes_padding_before_speeding_up():
+def test_voice_duration_rejects_over_cap_without_speeding():
     plan = (PlannedScene("title", FixedScene(), 3.0), PlannedScene("answer", FixedScene(), 4.0))
     clips = (
-        VoiceClip(Path("a.wav"), 37.4, "edge_tts", "voice", 10, 0, "speech"),
-        VoiceClip(Path("b.wav"), 37.4, "edge_tts", "voice", 10, 0, "speech"),
+        VoiceClip(Path("a.wav"), 3.0, "edge_tts", "voice", 10, 0, "speech"),
+        VoiceClip(Path("b.wav"), 72.5, "edge_tts", "voice", 10, 0, "speech"),
     )
     voice = VoiceRender(clips, (), "edge_tts", "voice", 20, 0)
     padded = _apply_voice_durations(plan, voice, 0.25)
-
-    result, adjusted = _fit_voice_duration(voice, padded, sum(item.duration_s for item in padded))
-
-    assert result is voice
-    assert sum(item.duration_s for item in adjusted) == 75.0
-    assert all(item.duration_s == 37.5 for item in adjusted)
+    with pytest.raises(OutputValidationError, match="exceeds the 75-second limit"):
+        _fit_voice_duration(voice, padded, sum(item.duration_s for item in padded))
 
 
-def test_voice_duration_speeds_up_slightly_then_rejects_excess(monkeypatch):
+def test_voice_duration_never_speeds_up(monkeypatch):
     import solution_video.pipeline as pipeline
+    from solution_video.engine.output import OutputValidationError
 
     plan = (PlannedScene("title", FixedScene(), 3.0), PlannedScene("answer", FixedScene(), 4.0))
     clips = (
-        VoiceClip(Path("a.wav"), 37.6, "edge_tts", "voice", 10, 0, "speech"),
-        VoiceClip(Path("b.wav"), 37.6, "edge_tts", "voice", 10, 0, "speech"),
+        VoiceClip(Path("a.wav"), 3.0, "edge_tts", "voice", 10, 0, "speech"),
+        VoiceClip(Path("b.wav"), 72.5, "edge_tts", "voice", 10, 0, "speech"),
     )
     voice = VoiceRender(clips, (), "edge_tts", "voice", 20, 0)
     padded = _apply_voice_durations(plan, voice, 0.0)
     calls = []
 
-    def fake_speed(path, factor):
-        calls.append(factor)
-        return path, 37.6 / factor
-
-    monkeypatch.setattr(pipeline, "speed_up_audio", fake_speed)
-    shortened, adjusted = pipeline._fit_voice_duration(voice, padded, 75.2)
-    assert len(calls) == 2
-    assert all(1 < factor <= 1.12 for factor in calls)
-    assert sum(item.duration_s for item in adjusted) <= 75.05
-    assert shortened.credits == 0
-
-    too_long = VoiceRender(
-        tuple(VoiceClip(Path(f"{index}.wav"), 45.0, "edge_tts", "voice", 10, 0, "speech") for index in range(2)),
-        (),
-        "edge_tts",
-        "voice",
-        20,
-        0,
-    )
-    too_long_plan = _apply_voice_durations(plan, too_long, 0.0)
-    with pytest.raises(VoiceRuntimeError, match="even with padding removed"):
-        pipeline._fit_voice_duration(too_long, too_long_plan, 90.0)
+    monkeypatch.setattr(pipeline, "speed_up_audio", lambda *_args: pytest.fail("speech speed-up is forbidden"))
+    with pytest.raises(OutputValidationError, match="no speech speed-up"):
+        pipeline._fit_voice_duration(voice, padded, 75.2)

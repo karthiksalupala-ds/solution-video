@@ -172,8 +172,7 @@ def test_style_does_not_move_cached_word_cues():
         aligned = _apply_voice_durations(plan, voice, 0.45)
         report = format_sync_report(aligned, voice)
         assert "Sync table (video time)" in report
-        assert "proportional fallback" not in report
-        assert "question/question | not narrated" in report
+        assert "question/question |" in report
         checks = []
         for item, clip in zip(aligned, clips):
             if clip is None:

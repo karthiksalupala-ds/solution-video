@@ -65,19 +65,30 @@ class LoudnessInfo:
 
 
 def normalize_final_mix(source: Path, destination: Path, *, narration_exists: bool) -> LoudnessInfo:
-    """Apply final loudnorm and return a conservative volumedetect measurement."""
+    """Apply a conservative final peak limiter while preserving source mean within gain."""
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise LoudnessError("ffmpeg is required to normalize the final audio mix")
+    source_info = measure_loudness(source)
+    gain_db = min(0.0, -1.5 - source_info.max_db)
+    filters = "aresample=192k"
+    if gain_db < 0.0:
+        filters += f",volume={gain_db:.3f}dB"
+    filters += ",alimiter=limit=-1.5dB:attack=5:release=50:level=disabled"
     command = [
-        ffmpeg, "-y", "-v", "error", "-i", str(source), "-af",
-        "loudnorm=I=-16:TP=-1.5:LRA=11,alimiter=limit=-1.5dB:level=0", "-ac", "1", "-ar", "44100", str(destination),
+        ffmpeg, "-y", "-v", "error", "-i", str(source), "-af", filters,
+        "-ac", "1", "-ar", "44100", str(destination),
     ]
     try:
         subprocess.run(command, check=True, capture_output=True, timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
         raise LoudnessError(f"final loudness normalization failed: {exc}") from exc
     info = measure_loudness(destination)
+    if info.max_db > -1.5:
+        raise LoudnessError(
+            f"final mix peak remains {info.max_db:.1f} dB after the true-peak limiter "
+            "(limit -1.5 dB)"
+        )
     if narration_exists and info.mean_db < -40.0:
         raise LoudnessError(f"narrated mix mean volume is {info.mean_db:.1f} dB, below -40 dB")
     return info

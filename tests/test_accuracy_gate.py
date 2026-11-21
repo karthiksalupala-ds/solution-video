@@ -106,6 +106,34 @@ def test_gate_blocks_tautology_filler_equation():
     assert any("tautology/filler" in reason for reason in result.reasons)
 
 
+def test_gate_blocks_identity_equations_in_percent_increase_output():
+    payload = json.loads((ROOT / "examples" / "percent_increase.json").read_text(encoding="utf-8"))
+    spec = SolutionSpec.from_payload(payload)
+    identity_step = spec.steps[1].model_copy(update={"lines": ["25 * 100 / 100 = 25"]})
+    altered = spec.model_copy(update={"steps": [spec.steps[0], identity_step]})
+
+    result = verify(spec.question_input, altered)
+
+    assert not result.passed
+    assert any("identity/no-op equation" in reason for reason in result.reasons)
+
+
+def test_gate_blocks_restated_percent_increase_result():
+    payload = json.loads((ROOT / "examples" / "percent_increase.json").read_text(encoding="utf-8"))
+    spec = SolutionSpec.from_payload(payload)
+    first = spec.steps[1].model_copy(update={"lines": ["20 / 80 * 100 = 25"]})
+    restated = spec.steps[1].model_copy(update={"lines": ["25 * 100 / 100 = 25"]})
+    altered = spec.model_copy(update={"steps": [spec.steps[0], first, restated]})
+
+    result = verify(spec.question_input, altered)
+
+    assert not result.passed
+    assert any(
+        "identity/no-op equation" in reason or "restates a previous evaluated result" in reason
+        for reason in result.reasons
+    )
+
+
 def test_gate_accepts_work_rates_grounded_in_question():
     payload = json.loads((ROOT / "examples" / "time_work.json").read_text(encoding="utf-8"))
     spec = SolutionSpec.from_payload(payload)
@@ -532,6 +560,36 @@ def test_speech_language_mode_is_applied_to_all_spoken_fields(monkeypatch):
     assert "do not read or repeat them in any speech field" in provider.prompt
     assert "say x as" in provider.prompt
     assert "“times”" in provider.prompt
+
+
+def test_concise_narration_style_is_in_prompt_and_cache_key(tmp_path):
+    spec = _spec()
+    payload = spec.model_dump(mode="json")
+    payload.pop("question_input")
+    payload["intro_speech"] = "Let's solve it."
+    for step in payload["steps"]:
+        step["speech"] = "Add the two real lengths to get four hundred metres."
+    payload["tip"]["speech"] = "Multiply metres per second by eighteen over five."
+    payload["answer"]["speech"] = "Answer: seventy-two kilometres per hour, option A."
+
+    class _PromptProvider(JsonProvider):
+        prompt = ""
+
+        def complete(self, prompt: str) -> str:
+            self.prompt = prompt
+            return json.dumps(payload)
+
+    provider = _PromptProvider()
+    generate_steps(
+        spec.question_input,
+        provider,
+        cache_dir=tmp_path,
+        narration_style="concise",
+    )
+
+    assert "Style: concise" in provider.prompt
+    assert "at most 14 words" in provider.prompt
+    assert "at most 10 words" in provider.prompt
 
 
 def test_schema_repair_stops_after_two_repairs(monkeypatch):

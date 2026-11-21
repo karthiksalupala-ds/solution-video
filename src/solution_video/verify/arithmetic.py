@@ -120,3 +120,41 @@ def verify_line(line: str) -> bool | None:
         return abs(evaluate(left) - evaluate(right)) <= Decimal("0.000001")
     except ArithmeticError:
         return None
+
+
+def equation_is_identity_or_filler(line: str) -> bool:
+    """Reject identity, no-op, and variable cancellation equations."""
+    if line.count("=") != 1:
+        return False
+    left, right = (part.strip() for part in line.split("=", 1))
+    left_clean = re.sub(r"\s+", "", left.replace("\u00d7", "*").replace("\u00f7", "/"))
+    right_clean = re.sub(r"\s+", "", _strip_result_unit(right).replace("\u00d7", "*").replace("\u00f7", "/"))
+    if left_clean == right_clean and not re.search(r"[+\-*/]", left_clean):
+        return True
+
+    identity_patterns = (
+        (r"^(.+)\*100/100$", r"^(.+)$"),
+        (r"^(.+)\*1$", r"^(.+)$"),
+        (r"^(.+)/1$", r"^(.+)$"),
+        (r"^(.+)\+0$", r"^(.+)$"),
+        (r"^(.+)-0$", r"^(.+)$"),
+    )
+    for left_pattern, _ in identity_patterns:
+        match = re.fullmatch(left_pattern, left_clean)
+        if not match:
+            continue
+        operand = match.group(1)
+        if operand == right_clean:
+            return True
+        if left_pattern.endswith(r"\*100/100$"):
+            try:
+                if evaluate(f"({operand})*100/100") == evaluate(right_clean):
+                    return True
+            except ArithmeticError:
+                pass
+        try:
+            if evaluate(operand) == evaluate(right_clean):
+                return True
+        except ArithmeticError:
+            continue
+    return False

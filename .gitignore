@@ -14,4 +14,4 @@ build/
 # Keep local prompt documentation out of GitHub
 /docs/
 /solution-video-phase2-renders/
-/graphify-out/
+graphify-out/

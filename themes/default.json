@@ -70,6 +70,7 @@
   "branding": {"footer_text": "Aptitude Daily", "show_day_pill": true},
   "voice": {
     "public_facing": true,
+    "narration_style": "concise",
     "elevenlabs_attribution_text": "Voice: ElevenLabs",
     "captions": false,
     "scene_padding_s": 0.45

@@ -19,16 +19,16 @@ from solution_video.voice.runtime import VoiceClip, VoiceRender
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_speech_inputs_keep_title_and_intro_but_skip_question_and_options():
+def test_speech_inputs_keep_short_title_and_add_question_read_cue():
     spec = SolutionSpec.from_payload(
         json.loads((ROOT / "examples" / "speed_train.json").read_text(encoding="utf-8"))
     )
-    inputs = _speech_inputs(spec)
+    inputs = _speech_inputs(spec, "tutor")
     texts = [item.text for item in inputs if item.text is not None]
 
-    assert inputs[0].text == "Day 10. Speed, Time & Distance. Let's work this out together."
+    assert inputs[0].text == "Day 10. Speed, Time & Distance"
     assert inputs[1].name == "question"
-    assert inputs[1].text is None
+    assert inputs[1].text == "Take a moment to read the question."
     assert spec.question_input.question not in texts
     assert "Option B: 90." not in texts
 
@@ -95,7 +95,7 @@ def test_render_mixes_mocked_voice_aligns_scenes_and_writes_safe_metadata(tmp_pa
     assert meta.voice_model == "en-IN-NeerjaNeural"
     assert meta.voice_credits == 0
     assert meta.voice_characters > 0
-    assert len(meta.voice_clips) == len(spec.steps) + 3
+    assert len(meta.voice_clips) == len(spec.steps) + 4
     assert all(clip.duration_s == 0.35 for clip in meta.voice_clips)
     assert meta.duration_s == observed["duration_s"] <= 75
     assert observed["frame_size"] == (theme.canvas.width, theme.canvas.height)
@@ -116,9 +116,16 @@ def test_complete_narration_may_exceed_requested_time_target_but_not_75_seconds(
     clip_path.write_bytes(b"mock audio")
 
     def fake_synthesize(inputs, **_kwargs):
+        durations = {"title": 3.0, "question": 5.0}
         clips = tuple(
             None if item.text is None else VoiceClip(
-                clip_path, 10.0, "edge_tts", "en-IN-NeerjaNeural", len(item.text), 0, item.text
+                clip_path,
+                durations.get(item.name, 10.0),
+                "edge_tts",
+                "en-IN-NeerjaNeural",
+                len(item.text),
+                0,
+                item.text,
             )
             for item in inputs
         )

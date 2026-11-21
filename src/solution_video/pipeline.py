@@ -30,6 +30,7 @@ from .llm.base import (
     JsonModeValidationError,
     JsonParseError,
     SpeechLanguageMode,
+    resolve_narration_style,
     resolve_speech_language_mode,
 )
 from .llm.base import rate_limit_delay
@@ -172,17 +173,7 @@ def _relative_cues(name: str, scene: object, speech: str = "") -> tuple[Cue, ...
             cues.append(_cue(f"line_{line_index}", 0.10 + 0.78 * speech_progress))
         return tuple(cues)
     if name == "question":
-        question_words = len(scene.question.question.split())
-        total_words = max(
-            1,
-            question_words + sum(len(option.split()) for option in scene.question.options),
-        )
-        elapsed = question_words
-        cues = [_cue("question", 0.08 + 0.82 * elapsed / total_words)]
-        for letter, option in zip("ABCD", scene.question.options):
-            elapsed += len(option.split())
-            cues.append(_cue(f"option_{letter}", 0.08 + 0.82 * elapsed / total_words))
-        return tuple(cues)
+        return (_cue("question", 0.25),)
     if name == "title":
         return (_cue("title", 0.15),)
     if name == "answer":
@@ -202,17 +193,7 @@ def _event_positions(name: str, scene: object, base_duration_s: float) -> tuple[
             "question",
             scene.theme.motion.get("question_option_start_s", 0.6) / base_duration_s,
         )
-        option_events = tuple(
-            _cue(
-                f"option_{letter}",
-                (
-                    scene.theme.motion.get("question_option_start_s", 0.6)
-                    + option_index * float(scene.theme.motion["stagger_s"])
-                ) / base_duration_s,
-            )
-            for option_index, letter in enumerate("ABCD")
-        )
-        return (question_event, *option_events)
+        return (question_event,)
     if name == "step":
         label_event = _cue("label", 0.50 / base_duration_s)
         line_events = tuple(
@@ -263,9 +244,10 @@ def plan_scenes(
     allow_scene_styles: bool = False,
 ) -> tuple[PlannedScene, ...]:
     question = spec.question_input
+    question_dwell = 5.12
     plan: list[PlannedScene] = [
-        PlannedScene("title", TitleScene(question, _scene_theme(theme, "title", allow_scene_styles)), 3.0),
-        PlannedScene("question", QuestionScene(question, _scene_theme(theme, "question", allow_scene_styles)), _reading_duration(question.question, 5.0, 9.0)),
+        PlannedScene("title", TitleScene(question, _scene_theme(theme, "title", allow_scene_styles)), 4.0),
+        PlannedScene("question", QuestionScene(question, _scene_theme(theme, "question", allow_scene_styles)), question_dwell),
     ]
     for index, step in enumerate(spec.steps, 1):
         plan.append(PlannedScene("step", StepScene(step, index, len(spec.steps), _scene_theme(theme, "step", allow_scene_styles)), _reading_duration(" ".join([step.label, *step.lines]), 3.2, 8.5)))
@@ -372,6 +354,7 @@ def render(
     sync_report: bool = False,
     style: str | None = None,
     allow_scene_styles: bool = False,
+    narration_style: str | None = None,
 ) -> Meta:
     """Render a verified solution with optional cached, synchronized narration."""
     del voice
@@ -382,11 +365,33 @@ def render(
         raise ValueError("Accuracy gate blocked render: " + "; ".join(gate.reasons))
     resolved_style = resolve_style(style or theme.style, spec.question_input.day, theme.style_allowlist)
     theme = style_theme(theme, resolved_style.name)
-    voice_inputs = _speech_inputs(spec)
+    resolved_narration_style = resolve_narration_style(narration_style)
+    voice_inputs = _speech_inputs(spec, resolved_narration_style)
     if no_voice:
         voice_result = VoiceRender(tuple(None for _ in voice_inputs), (), "none", None, 0, 0)
     else:
         voice_result = synthesize_voice(voice_inputs, provider_override=voice_provider)
+        title_clip = voice_result.clips[0] if voice_result.clips else None
+        if title_clip is not None and title_clip.duration_s > 4.5:
+            topic_words = re.findall(r"[A-Za-z0-9]+", spec.question_input.topic)
+            topic_words = [
+                word for word in topic_words
+                if word.casefold() not in {"and", "or", "of", "the", "with"}
+            ]
+            short_topic = " ".join(topic_words[:1]) or spec.question_input.topic
+            fallback = synthesize_voice(
+                (VoiceInput("title", f"Day {spec.question_input.day}. {short_topic}"),),
+                provider_override=voice_provider,
+            )
+            fallback_clip = fallback.clips[0] if fallback.clips else None
+            if fallback_clip is not None:
+                clips = list(voice_result.clips)
+                clips[0] = fallback_clip
+                voice_result = replace(
+                    voice_result,
+                    clips=tuple(clips),
+                    characters=max(0, voice_result.characters - len(title_clip.text or "") + fallback_clip.characters),
+                )
     theme = _voice_theme(theme, voice_result)
     plan = plan_scenes(spec, theme, allow_scene_styles=allow_scene_styles)
     effective_scene_styles = {
@@ -489,6 +494,7 @@ def render(
         voice_characters=voice_result.characters,
         voice_credits=voice_result.credits,
         voice_clips=clip_meta,
+        narration_style=resolved_narration_style,
         style=resolved_style.name,
         scene_styles=effective_scene_styles,
         warnings=warnings,
@@ -556,19 +562,61 @@ def _encode_with_size_retry(
     return True
 
 
-def _speech_inputs(spec: SolutionSpec) -> tuple[VoiceInput, ...]:
+def _concise_line_speech(line: str) -> str:
+    """Convert a display calculation into a short, speakable concise sentence."""
+    text = (
+        line.replace("\u00d7", " times ")
+        .replace("*", " times ")
+        .replace("/", " divided by ")
+        .replace("=", " equals ")
+        .replace("+", " plus ")
+        .replace("-", " minus ")
+        .replace("km/h", "kilometres per hour")
+        .replace("m/s", "metres per second")
+    )
+    text = re.sub(r"\s+", " ", text).strip()
+    words = text.split()
+    if len(words) > 14:
+        text = " ".join(words[:14])
+    return text[:1].upper() + text[1:] + ("." if not text.endswith(".") else "")
+
+
+def _speech_inputs(
+    spec: SolutionSpec,
+    narration_style: str | None = None,
+) -> tuple[VoiceInput, ...]:
     question = spec.question_input
-    title_speech = f"Day {question.day}. {question.topic}."
-    if spec.intro_speech:
-        title_speech = f"{title_speech} {spec.intro_speech.strip()}"
+    style = resolve_narration_style(narration_style)
+    title_speech = f"Day {question.day}. {question.topic}"
     inputs = [
         VoiceInput("title", title_speech),
-        VoiceInput("question", None),
-        *(VoiceInput(f"step-{index}", step.speech) for index, step in enumerate(spec.steps, 1)),
+        VoiceInput("question", "Take a moment to read the question."),
     ]
+    if style == "concise":
+        inputs.extend(
+            VoiceInput(f"step-{index}", _concise_line_speech(step.lines[-1]))
+            for index, step in enumerate(spec.steps, 1)
+        )
+    else:
+        inputs.extend(
+            VoiceInput(f"step-{index}", step.speech)
+            for index, step in enumerate(spec.steps, 1)
+        )
     if spec.tip:
-        inputs.append(VoiceInput("tip", spec.tip.speech or spec.tip.display))
-    inputs.append(VoiceInput("answer", spec.answer.speech))
+        tip_text = spec.tip.speech or spec.tip.display
+        if style == "concise":
+            tip_words = tip_text.replace("/", " divided by ").split()
+            tip_text = " ".join(tip_words[:10])
+        inputs.append(VoiceInput("tip", tip_text))
+    answer_text = spec.answer.speech
+    if style == "concise":
+        answer_display = (
+            spec.answer.display.replace("km/h", "kilometres per hour")
+            .replace("m/s", "metres per second")
+            .replace("%", "percent")
+        )
+        answer_text = f"The answer is {answer_display}, option {spec.answer.correct_option or spec.question_input.correct_option}."
+    inputs.append(VoiceInput("answer", answer_text))
     if spec.cta:
         inputs.append(VoiceInput("outro", spec.cta.speech or spec.cta.display))
     return tuple(inputs)
@@ -605,6 +653,8 @@ def _apply_voice_durations(
             adjusted.append(item)
             continue
         duration = clip.duration_s + padding_s
+        if item.name == "title":
+            duration = clip.duration_s
         base_cues = item.reveal_cues
         if item.scene_duration_override is not None and item.narration_duration_s > 0:
             previous_clip_progress = item.narration_duration_s / item.scene_duration_override
@@ -612,6 +662,13 @@ def _apply_voice_durations(
                 Cue(cue.name, cue.progress / previous_clip_progress)
                 for cue in item.reveal_cues
             )
+        if item.name == "title":
+            if duration > 4.5:
+                raise OutputValidationError(
+                    "Title narration exceeds the 4.5-second pacing limit; shorten the title speech."
+                )
+        if item.name == "question":
+            duration = max(4.5, min(6.5, clip.duration_s + 2.0))
         clip_progress = clip.duration_s / duration
         cues = []
         for cue in base_cues:
@@ -654,8 +711,7 @@ def _cue_word_offset(
             target = scene.step.speech or scene.step.label
     elif item.name == "question":
         if cue_name == "question":
-            target = scene.question.question
-            match_last = True
+            target = "Take a moment to read the question"
         elif cue_name.startswith("option_"):
             letter = cue_name.removeprefix("option_")
             try:
@@ -736,43 +792,11 @@ def _fit_voice_duration(
         raise VoiceRuntimeError("Voice render duration limit must be greater than zero and at most 75 seconds")
     if duration_s <= maximum:
         return voice, plan
-    spoken_count = sum(clip is not None for clip in voice.clips)
-    if spoken_count == 0:
-        raise VoiceRuntimeError(
-            f"Planned video duration {duration_s:.2f}s exceeds the {maximum:.0f}-second limit"
-        )
-    speech_duration = sum(clip.duration_s for clip in voice.clips if clip is not None)
-    silent_scene_duration = sum(
-        item.duration_s for item, clip in zip(plan, voice.clips) if clip is None
+    raise OutputValidationError(
+        f"Narration pacing exceeds the {maximum:.0f}-second limit "
+        f"(estimated {duration_s:.2f}s); no speech speed-up is allowed. "
+        "Use concise narration or shorten the script."
     )
-    if speech_duration + silent_scene_duration <= maximum:
-        padding = (maximum - speech_duration - silent_scene_duration) / spoken_count
-        return voice, _apply_voice_durations(plan, voice, padding)
-    factor = (speech_duration + silent_scene_duration) / maximum
-    if factor > 1.12:
-        raise VoiceRuntimeError(
-            f"Narration would exceed the {maximum:.0f}-second limit even with padding removed "
-            f"({speech_duration + silent_scene_duration:.2f}s); shorten the script"
-        )
-    clips = []
-    for clip in voice.clips:
-        if clip is None:
-            clips.append(None)
-            continue
-        path, shortened_duration = speed_up_audio(clip.path, factor)
-        clips.append(replace(
-            clip,
-            path=path,
-            duration_s=shortened_duration,
-            word_boundaries=tuple((word, offset / factor) for word, offset in clip.word_boundaries),
-        ))
-    shortened = replace(voice, clips=tuple(clips))
-    adjusted_plan = _apply_voice_durations(plan, shortened, 0.0)
-    if sum(item.duration_s for item in adjusted_plan) > maximum + 0.05:
-        raise VoiceRuntimeError(
-            f"Narration remains longer than the {maximum:.0f}-second limit after slight speed-up"
-        )
-    return shortened, adjusted_plan
 
 
 def _caption_frame(frame: Image.Image, text: str, time_s: float, duration_s: float, theme: Theme) -> Image.Image:
@@ -830,17 +854,36 @@ def render_from_file(
     )
 
 
+def _estimated_narration_duration(spec: SolutionSpec) -> float:
+    """Estimate paced voice duration without synthesizing or speeding audio."""
+    if spec.intro_speech:
+        title_words = len(f"Day {spec.question_input.day}. {spec.question_input.topic}. {spec.intro_speech}".split())
+    else:
+        title_words = len(f"Day {spec.question_input.day}. {spec.question_input.topic}".split())
+    title = min(4.0, max(2.0, title_words / 2.5))
+    question_words = len(spec.question_input.question.split())
+    question = max(5.0, min(8.0, question_words / 3.0 + 2.0))
+    speech_words = sum(len(step.speech.split()) for step in spec.steps)
+    if spec.tip:
+        speech_words += len((spec.tip.speech or spec.tip.display).split())
+    speech_words += len(spec.answer.speech.split())
+    spoken = title + question + (speech_words / 2.5)
+    return spoken + 0.45 * (1 + len(spec.steps) + (1 if spec.tip else 0) + 1)
+
+
 def generate_steps(
     question: QuestionInput,
     provider: JsonProvider,
     *,
     cache_dir: Path | None = None,
     speech_language_mode: str | None = None,
+    narration_style: str | None = None,
 ) -> SolutionSpec:
     """Ask a provider for steps and bind them to the authoritative question."""
     mode: SpeechLanguageMode = resolve_speech_language_mode(speech_language_mode)
+    style = resolve_narration_style(narration_style)
     question_payload = question.model_dump(mode="json")
-    prompt = prompt_for_question(question_payload, mode)
+    prompt = prompt_for_question(question_payload, mode, style)
     schema = SolutionSpec.model_json_schema()
     cache_path = _steps_cache_path(prompt, cache_dir) if cache_dir else None
     if cache_path and cache_path.exists():
@@ -856,6 +899,7 @@ def generate_steps(
     api_attempts = 0
     repairs = 0
     gate_repair_attempted = False
+    concise_fallback_attempted = False
     rate_limit_retries = 0
     while api_attempts < 3:
         api_attempts += 1
@@ -935,6 +979,26 @@ def generate_steps(
             continue
         gate = verify(question, spec)
         if gate.passed:
+            estimated_duration = _estimated_narration_duration(spec)
+            if style == "tutor" and estimated_duration > 75.0 and not concise_fallback_attempted:
+                concise_fallback_attempted = True
+                style = "concise"
+                repairs += 1
+                prompt = prompt_for_question(question_payload, mode, "concise")
+                prompt = (
+                    f"{prompt}\n\nThe tutor script is estimated at {estimated_duration:.1f}s, "
+                    "above the 75-second limit. Regenerate once in concise style: no greeting "
+                    "and at most a 3-word hook, at most 14 words per step speech, tip at most "
+                    "10 words, answer at most 10 words, and a 30-45 second target."
+                )
+                time.sleep(1.0)
+                continue
+            if estimated_duration > 75.0:
+                raise OutputValidationError(
+                    f"Generated narration is estimated at {estimated_duration:.1f}s, "
+                    "above the 75-second cap after the concise fallback. "
+                    "No speech speed-up is allowed; shorten the script."
+                )
             if cache_path:
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
                 cache_path.write_text(spec.model_dump_json(indent=2), encoding="utf-8")
@@ -947,6 +1011,8 @@ def generate_steps(
                 "machine-evaluable arithmetic equality",
                 "operands absent from the question",
                 "tautology/filler",
+                "identity/no-op",
+                "restates a previous evaluated result",
                 "Last evaluated step result",
             )
         )

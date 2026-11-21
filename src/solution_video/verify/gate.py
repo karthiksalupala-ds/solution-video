@@ -10,6 +10,7 @@ from ..schema import QuestionInput, SolutionSpec
 from .answers import answers_match
 from .arithmetic import (
     equation_has_computation,
+    equation_is_identity_or_filler,
     equation_operands,
     equation_result,
     numeric_answer,
@@ -47,6 +48,15 @@ def verify(question: QuestionInput, spec: SolutionSpec) -> GateResult:
             if valid is False:
                 reasons.append(f"Step {step_index} line {line_index} arithmetic is false: {line}")
             elif valid is True:
+                if equation_is_identity_or_filler(line):
+                    reasons.append(
+                        f"Step {step_index} line {line_index} is an identity/no-op equation: {line}"
+                    )
+                    if not re.search(r"[+\-*/]", re.sub(r"\s+", "", line.split("=", 1)[0])):
+                        reasons.append(
+                            f"Step {step_index} line {line_index} is a tautology/filler, not a computation: {line}"
+                        )
+                    continue
                 if not equation_has_computation(line):
                     reasons.append(
                         f"Step {step_index} line {line_index} is a tautology/filler, not a computation: {line}"

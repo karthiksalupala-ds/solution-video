@@ -44,6 +44,8 @@ class JsonParseError(LLMError):
 
 SpeechLanguageMode = Literal["english", "tanglish_latin", "telugu_script", "mixed"]
 SPEECH_LANGUAGE_MODES = ("english", "tanglish_latin", "telugu_script", "mixed")
+NarrationStyle = Literal["concise", "tutor"]
+NARRATION_STYLES = ("concise", "tutor")
 
 
 def resolve_speech_language_mode(mode: str | None = None) -> SpeechLanguageMode:
@@ -60,6 +62,15 @@ def resolve_speech_language_mode(mode: str | None = None) -> SpeechLanguageMode:
     raise ValueError(
         "SPEECH_LANGUAGE_MODE must be one of: " + ", ".join(SPEECH_LANGUAGE_MODES)
     )
+
+
+def resolve_narration_style(style: str | None = None) -> NarrationStyle:
+    """Resolve narration style from an explicit value or NARRATION_STYLE."""
+    selected = os.getenv("NARRATION_STYLE", "concise") if style is None else style
+    selected = selected.strip().lower()
+    if selected not in NARRATION_STYLES:
+        raise ValueError("NARRATION_STYLE must be one of: concise, tutor")
+    return selected  # type: ignore[return-value]
 
 
 def retry_after_seconds(value: str | None) -> float | None:
@@ -114,6 +125,7 @@ class JsonProvider(ABC):
 def prompt_for_question(
     question: dict[str, Any],
     speech_language_mode: str | None = None,
+    narration_style: str | None = None,
 ) -> str:
     """Load the prompt from disk and append caller-owned question data."""
     prompt_path = Path(__file__).with_name("prompts") / "solution_to_steps.md"
@@ -122,6 +134,7 @@ def prompt_for_question(
     except OSError as exc:
         raise LLMError("Solution-to-steps prompt file is missing") from exc
     mode = resolve_speech_language_mode(speech_language_mode)
+    narration_style = resolve_narration_style(narration_style)
     mode_instructions = {
         "english": "Use natural English only; do not insert Telugu or Tanglish.",
         "tanglish_latin": "Use conversational Telugu written in Latin script, retaining technical English terms naturally.",
@@ -133,6 +146,17 @@ def prompt_for_question(
         "SPEECH LANGUAGE CONFIGURATION\n"
         f"Mode: {mode}\n"
         f"{mode_instructions[mode]}\n"
+        "NARRATION STYLE CONFIGURATION\n"
+        f"Style: {narration_style}\n"
+        + (
+            "Concise rules: no greeting and at most a 3-word hook; each step speech "
+            "must be at most 14 words and contain one sentence with the real operation "
+            "and result; tip speech at most 10 words; answer speech at most 10 words; "
+            "target 30-45 seconds total."
+            if narration_style == "concise"
+            else "Tutor rules: keep the current friendly, conversational tutor voice."
+        )
+        + "\n"
         "Apply this mode consistently to intro_speech, every steps[*].speech, tip.speech, "
         "answer.speech, and any outro/CTA speech. Keep all display text separate "
         "from speech. Spell numbers in speakable words in the selected mode; "

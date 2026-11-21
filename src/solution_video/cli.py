@@ -58,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     steps_parser.add_argument("--provider", choices=("groq", "gemini"), default="groq")
     steps_parser.add_argument("--seed", type=_seed)
     steps_parser.add_argument("--speech-language-mode", choices=SPEECH_LANGUAGE_MODES)
+    steps_parser.add_argument("--narration-style", choices=("concise", "tutor"))
 
     today_parser = sub.add_parser("render-from-today", help="Generate, verify, then render today.json")
     today_parser.add_argument("--input", required=True, type=Path)
@@ -127,7 +128,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "steps":
             spec = _generate_from_today(
-                args.input, args.provider, args.seed, args.speech_language_mode
+                args.input,
+                args.provider,
+                args.seed,
+                args.speech_language_mode,
+                getattr(args, "narration_style", None),
             )
             args.out.parent.mkdir(parents=True, exist_ok=True)
             args.out.write_text(spec.model_dump_json(indent=2), encoding="utf-8")
@@ -157,10 +162,15 @@ def main(argv: list[str] | None = None) -> int:
                 sync_report=args.sync_report,
                 style=args.style,
                 allow_scene_styles=args.allow_scene_style_overrides,
+                narration_style=getattr(args, "narration_style", None),
             )
         else:
             spec = _generate_from_today(
-                args.input, args.provider, args.seed, args.speech_language_mode
+                args.input,
+                args.provider,
+                args.seed,
+                args.speech_language_mode,
+                getattr(args, "narration_style", None),
             )
             render_started = True
             if args.dry_run:
@@ -179,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
                 sync_report=args.sync_report,
                 style=args.style,
                 allow_scene_styles=args.allow_scene_style_overrides,
+                narration_style=getattr(args, "narration_style", None),
             )
     except LLMError as exc:
         print(f"LLM failed: {exc}", file=sys.stderr)
@@ -218,6 +229,7 @@ def _add_render_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dry-run", action="store_true", help="Validate and print the scene plan without rendering")
     parser.add_argument("--sync-report", action="store_true", help="Print narration word-time and reveal-time alignment")
     parser.add_argument("--style", help="Style name, or auto to rotate deterministically by day")
+    parser.add_argument("--narration-style", choices=("concise", "tutor"), help="Narration pacing style")
     parser.add_argument(
         "--allow-scene-style-overrides",
         action="store_true",
@@ -498,6 +510,7 @@ def _generate_from_today(
     provider_name: str,
     seed: int | None,
     speech_language_mode: str | None = None,
+    narration_style: str | None = None,
 ) -> SolutionSpec:
     try:
         payload = json.loads(input_path.read_text(encoding="utf-8"))
@@ -513,6 +526,7 @@ def _generate_from_today(
         provider,
         cache_dir=Path("out/.solution-video-cache"),
         speech_language_mode=speech_language_mode,
+        narration_style=narration_style,
     )
     _apply_seed(spec, seed)
     return spec
