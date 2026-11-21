@@ -174,7 +174,7 @@ class Meta(BaseModel):
     style: str = "classic"
     scene_styles: dict[str, str] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
-    version: str = "0.2.0"
+    version: str = "0.2.1"
 
 
 def _normalise_answer(value: str) -> str:
