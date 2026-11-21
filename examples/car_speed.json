@@ -14,24 +14,28 @@
   "final_answer": "50/3 m/s",
   "solution": "Average speed = Distance / Time = 180 / 3 = 60 km/h. Convert km/h to m/s: 60 x 5/18 = 50/3 m/s.",
   "expected_steps": {
+    "intro_speech": "Let's work out the speed, then switch to the unit the question wants.",
     "steps": [
       {
         "label": "Step 1: Average speed in km/h",
         "lines": [
           "180 / 3 = 60 km/h"
         ],
-        "speech": "First, calculate average speed. Speed equals distance divided by time. One hundred eighty divided by three equals sixty kilometres per hour."
+        "speech": "The car covers 180 kilometres in 3 hours. So its speed is 60 kilometres per hour."
       },
       {
         "label": "Step 2: Convert to m/s",
         "lines": [
           "60 x 5/18 = 50/3 m/s"
         ],
-        "speech": "To convert kilometres per hour to metres per second, multiply by five over eighteen. Sixty times five over eighteen is fifty over three metres per second."
+        "speech": "The question wants metres per second, so let's switch units. Multiply 60 by 5 over 18, and that gives 50 over 3 metres per second."
       }
     ],
-    "tip": "km/h to m/s: multiply by 5/18",
+    "tip": {
+      "display": "km/h to m/s: multiply by 5/18",
+      "speech": "To change kilometres per hour into metres per second, multiply by 5 over 18."
+    },
     "answer": "50/3 m/s",
-    "answer_speech": "The correct answer is fifty over three metres per second."
+    "answer_speech": "So that's 50 over 3 metres per second, option B."
   }
 }

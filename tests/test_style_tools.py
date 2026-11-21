@@ -162,6 +162,9 @@ def test_style_does_not_move_cached_word_cues():
         inputs = _speech_inputs(spec)
         clips = []
         for item, voice_input in zip(plan, inputs):
+            if voice_input.text is None:
+                clips.append(None)
+                continue
             words = re.findall(r"[a-z0-9]+", normalize_speech(voice_input.text).casefold())
             boundaries = tuple((word, index * 0.1) for index, word in enumerate(words))
             clips.append(VoiceClip(Path("cached.wav"), max(1.0, len(words) * 0.1), "edge_tts", "test", 0, 0, voice_input.text, boundaries))
@@ -170,8 +173,11 @@ def test_style_does_not_move_cached_word_cues():
         report = format_sync_report(aligned, voice)
         assert "Sync table (video time)" in report
         assert "proportional fallback" not in report
+        assert "question/question | not narrated" in report
         checks = []
         for item, clip in zip(aligned, clips):
+            if clip is None:
+                continue
             for cue in item.reveal_cues:
                 expected = _cue_word_offset(item, cue.name, clip.word_boundaries)
                 if expected is not None:

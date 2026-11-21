@@ -109,7 +109,7 @@ def test_voice_reveal_cues_land_inside_the_spoken_clip_before_padding():
         assert max(scene.cue_time(cue.name) for cue in scene.reveal_cues) <= 0.35
 
 
-def test_edge_word_boundaries_align_equations_and_question_options():
+def test_edge_word_boundaries_align_equations_without_narrating_question_options():
     import json
 
     root = Path(__file__).resolve().parents[1]
@@ -118,38 +118,25 @@ def test_edge_word_boundaries_align_equations_and_question_options():
     step_index = next(index for index, item in enumerate(plan) if item.name == "step")
     question_index = next(index for index, item in enumerate(plan) if item.name == "question")
     step_boundaries = (("one", 0.8), ("hundred", 0.85), ("fifty", 0.9))
-    question_boundaries = (
-        ("Option", 4.0), ("A", 4.05), ("seventy", 4.1), ("two", 4.15),
-        ("Option", 5.0), ("B", 5.05), ("ninety", 5.1),
-        ("Option", 6.0), ("C", 6.05), ("one", 6.1), ("hundred", 6.15), ("eight", 6.2),
-        ("Option", 7.0), ("D", 7.05), ("one", 7.1), ("hundred", 7.15), ("twenty", 7.2),
-    )
     clips = [
         VoiceClip(Path(f"{index}.wav"), 10.0, "edge_tts", "voice", 10, 0, "speech")
+        if index != question_index else None
         for index in range(len(plan))
     ]
     clips[step_index] = VoiceClip(
         Path("step.wav"), 10.0, "edge_tts", "voice", 10, 0, "speech", step_boundaries
     )
-    clips[question_index] = VoiceClip(
-        Path("question.wav"), 10.0, "edge_tts", "voice", 10, 0, "speech", question_boundaries
-    )
     voice = VoiceRender(tuple(clips), (), "edge_tts", "voice", 20, 0)
     synchronized = _apply_voice_durations(plan, voice, 0.45)
     step = synchronized[step_index]
-    question = synchronized[question_index]
 
     equation_time = step.cue_time("line_1")
     assert equation_time == pytest.approx(0.75)
     assert 0 <= 0.8 - equation_time <= 0.15
-    for letter, expected in zip("ABCD", (4.0, 5.0, 6.0, 7.0)):
-        actual = question.cue_time(f"option_{letter}")
-        assert actual == pytest.approx(expected - 0.05)
-        assert 0 <= expected - actual <= 0.15
 
     report = format_sync_report(synchronized, voice)
     assert "step/line_1 |" in report
-    assert "question/option_A |" in report
+    assert "question/option_A | not narrated" in report
 
 
 def test_other_providers_keep_proportional_cue_timing():

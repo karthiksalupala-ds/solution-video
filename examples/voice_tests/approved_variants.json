@@ -4,34 +4,34 @@
     {
       "n": 1,
       "step": 1,
-      "source_text": "150 plus 250 is 400 meters.",
+      "source_text": "for the train to clear the platform, its back has to get all the way past the end too.",
       "variants": {
-        "english": "150 plus 250 is 400 metres.",
-        "tanglish_latin": "150 plus 250 kalipithe 400 metres avutundi.",
-        "telugu_script": "150కి 250 కలిపితే 400 మీటర్లు అవుతుంది.",
-        "telugu_english": "150 plus 250 కలిపితే 400 metres అవుతుంది."
+        "english": "for the train to clear the platform, its back has to get all the way past the end too.",
+        "tanglish_latin": "train platform ni clear cheyyalante, daani back kuda end daati vellali.",
+        "telugu_script": "రైలు ప్లాట్‌ఫారమ్‌ను దాటాలంటే, దాని వెనుక భాగం కూడా చివరిని దాటాలి.",
+        "telugu_english": "train platform ni clear cheyyalante, daani back kuda end daati vellali."
       }
     },
     {
       "n": 2,
       "step": 2,
-      "source_text": "400 by 20 is 20 meters per second.",
+      "source_text": "Those 400 metres take 20 seconds.",
       "variants": {
-        "english": "400 metres divided by 20 seconds is 20 metres per second.",
-        "tanglish_latin": "400 ni 20 tho divide chesthe 20 metres per second.",
-        "telugu_script": "400 మీటర్లను 20 సెకన్లతో భాగిస్తే సెకనుకు 20 మీటర్లు వస్తుంది.",
-        "telugu_english": "400 metres ని 20 seconds తో divide చేస్తే 20 metres per second వస్తుంది."
+        "english": "Those 400 metres take 20 seconds.",
+        "tanglish_latin": "Aa 400 metres cover cheyadaniki 20 seconds padutayi.",
+        "telugu_script": "ఆ 400 మీటర్లు ప్రయాణించడానికి 20 సెకన్లు పడతాయి.",
+        "telugu_english": "Aa 400 metres cover cheyadaniki 20 seconds padutayi."
       }
     },
     {
       "n": 3,
       "step": 3,
-      "source_text": "20 times 18 by 5 is 72 kilometres per hour.",
+      "source_text": "Multiply 20 by 18 over 5, and we get 72 kilometres per hour.",
       "variants": {
-        "english": "20 times 18/5 is 72 kilometres per hour.",
-        "tanglish_latin": "20 ni 18/5 tho multiply chesthe 72 kilometres per hour vastundi.",
-        "telugu_script": "20ని 18/5తో గుణిస్తే గంటకు 72 కిలోమీటర్లు వస్తుంది.",
-        "telugu_english": "20 ని 18/5 తో multiply చేస్తే 72 kilometres per hour వస్తుంది."
+        "english": "Multiply 20 by 18 over 5, and we get 72 kilometres per hour.",
+        "tanglish_latin": "20 ni 18 over 5 tho multiply chesthe 72 kilometres per hour vastundi.",
+        "telugu_script": "20ని 18/5తో గుణిస్తే గంటకు 72 కిలోమీటర్ల వేగం వస్తుంది.",
+        "telugu_english": "20 ni 18 over 5 tho multiply chesthe 72 kilometres per hour vastundi."
       }
     }
   ]

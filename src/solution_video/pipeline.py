@@ -173,7 +173,10 @@ def _relative_cues(name: str, scene: object, speech: str = "") -> tuple[Cue, ...
         return tuple(cues)
     if name == "question":
         question_words = len(scene.question.question.split())
-        total_words = max(1, len(speech.split()))
+        total_words = max(
+            1,
+            question_words + sum(len(option.split()) for option in scene.question.options),
+        )
         elapsed = question_words
         cues = [_cue("question", 0.08 + 0.82 * elapsed / total_words)]
         for letter, option in zip("ABCD", scene.question.options):
@@ -397,7 +400,7 @@ def render(
         voice_result,
         plan,
         duration_s,
-        min(float(spec.question_input.time_sec or 75), 75.0),
+        75.0,
     )
     duration_s = sum(item.duration_s for item in plan)
     if sync_report:
@@ -555,13 +558,12 @@ def _encode_with_size_retry(
 
 def _speech_inputs(spec: SolutionSpec) -> tuple[VoiceInput, ...]:
     question = spec.question_input
-    spoken_question = " ".join((
-        question.question,
-        *(f"Option {letter}: {option}." for letter, option in zip("ABCD", question.options)),
-    ))
+    title_speech = f"Day {question.day}. {question.topic}."
+    if spec.intro_speech:
+        title_speech = f"{title_speech} {spec.intro_speech.strip()}"
     inputs = [
-        VoiceInput("title", f"Day {question.day}. {question.topic}."),
-        VoiceInput("question", spoken_question),
+        VoiceInput("title", title_speech),
+        VoiceInput("question", None),
         *(VoiceInput(f"step-{index}", step.speech) for index, step in enumerate(spec.steps, 1)),
     ]
     if spec.tip:
@@ -714,7 +716,10 @@ def format_sync_report(
         for cue in item.reveal_cues:
             expected = _cue_word_offset(item, cue.name, clip.word_boundaries) if clip else None
             actual = cursor + item.cue_time(cue.name)
-            expected_label = f"{cursor + expected:.2f}s" if expected is not None else "proportional fallback"
+            if clip is None:
+                expected_label = "not narrated"
+            else:
+                expected_label = f"{cursor + expected:.2f}s" if expected is not None else "proportional fallback"
             lines.append(f"{item.name}/{cue.name} | {expected_label} | {actual:.2f}s")
         cursor += item.duration_s
     return "\n".join(lines)
@@ -837,7 +842,7 @@ def generate_steps(
     question_payload = question.model_dump(mode="json")
     prompt = prompt_for_question(question_payload, mode)
     schema = SolutionSpec.model_json_schema()
-    cache_path = _steps_cache_path(question_payload, mode, cache_dir) if cache_dir else None
+    cache_path = _steps_cache_path(prompt, cache_dir) if cache_dir else None
     if cache_path and cache_path.exists():
         try:
             cached = SolutionSpec.model_validate_json(cache_path.read_text(encoding="utf-8"))
@@ -915,6 +920,19 @@ def generate_steps(
             )
             time.sleep(1.0)
             continue
+        if not spec.intro_speech or not spec.intro_speech.strip():
+            if repairs == 2 or api_attempts == 3:
+                raise ValueError(
+                    f"Generated steps omitted intro_speech after {api_attempts} API attempts"
+                )
+            repairs += 1
+            prompt = (
+                f"{prompt}\n\nYour previous JSON omitted intro_speech. "
+                "Add one short, friendly opening that does not reveal the answer "
+                "or repeat the question/options. Return the complete JSON object."
+            )
+            time.sleep(1.0)
+            continue
         gate = verify(question, spec)
         if gate.passed:
             if cache_path:
@@ -961,13 +979,11 @@ def generate_steps(
 
 
 def _steps_cache_path(
-    question_payload: dict[str, Any],
-    speech_language_mode: SpeechLanguageMode,
+    prompt: str,
     cache_dir: Path,
 ) -> Path:
-    """Build the cache path from the question and narration-language config."""
-    cache_payload = {"question": question_payload, "speech_language_mode": speech_language_mode}
-    encoded = json.dumps(cache_payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    """Build a cache path from the exact prompt so changed instructions invalidate old output."""
+    encoded = prompt.encode("utf-8")
     digest = hashlib.sha256(encoded).hexdigest()
     return cache_dir / f"{digest}.json"
 

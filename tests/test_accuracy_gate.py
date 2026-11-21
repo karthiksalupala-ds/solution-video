@@ -436,6 +436,51 @@ def test_steps_cache_skips_provider_after_success(monkeypatch, tmp_path):
     assert len(list(cache_dir.glob("*.json"))) == 1
 
 
+def test_generated_steps_repair_missing_intro_speech(monkeypatch):
+    import solution_video.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _delay: None)
+    spec = _spec()
+    valid_payload = spec.model_dump(mode="json")
+    valid_payload.pop("question_input")
+    missing_intro = dict(valid_payload)
+    missing_intro.pop("intro_speech")
+
+    class _CaptureProvider(_MockProvider):
+        prompts = []
+
+        def complete(self, prompt: str) -> str:
+            self.prompts.append(prompt)
+            return super().complete(prompt)
+
+    provider = _CaptureProvider([missing_intro, valid_payload])
+    generated = generate_steps(spec.question_input, provider)
+
+    assert generated.intro_speech
+    assert provider.calls == 2
+    assert "omitted intro_speech" in provider.prompts[1]
+
+
+def test_steps_cache_is_invalidated_when_prompt_changes(monkeypatch, tmp_path):
+    import solution_video.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline.time, "sleep", lambda _delay: None)
+    spec = _spec()
+    payload = spec.model_dump(mode="json")
+    payload.pop("question_input")
+    provider = _MockProvider(payload)
+    prompt_version = ["prompt revision one"]
+    monkeypatch.setattr(pipeline, "prompt_for_question", lambda *_args: prompt_version[0])
+    cache_dir = tmp_path / "step-cache"
+
+    generate_steps(spec.question_input, provider, cache_dir=cache_dir)
+    prompt_version[0] = "prompt revision two"
+    generate_steps(spec.question_input, provider, cache_dir=cache_dir)
+
+    assert provider.calls == 2
+    assert len(list(cache_dir.glob("*.json"))) == 2
+
+
 def test_steps_cache_is_separated_by_speech_language_mode(monkeypatch, tmp_path):
     import solution_video.pipeline as pipeline
 
@@ -476,9 +521,15 @@ def test_speech_language_mode_is_applied_to_all_spoken_fields(monkeypatch):
     )
 
     assert "Mode: english" in provider.prompt
-    for field in ("steps[*].speech", "tip.speech", "answer.speech"):
+    for field in ("intro_speech", "steps[*].speech", "tip.speech", "answer.speech"):
         assert field in provider.prompt
     assert "Use natural English only" in provider.prompt
+    assert "friendly tutor explaining the idea to one learner" in provider.prompt
+    assert "briefly explain why the operation fits" in provider.prompt
+    assert "Do not read each formula line word-for-word" in provider.prompt
+    assert "vary sentence rhythm" in provider.prompt
+    assert "do not force every step into the same template" in provider.prompt
+    assert "do not read or repeat them in any speech field" in provider.prompt
     assert "say x as" in provider.prompt
     assert "“times”" in provider.prompt
 

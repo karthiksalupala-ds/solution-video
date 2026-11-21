@@ -14,6 +14,7 @@
   "final_answer": "8 days",
   "solution": "A's 1 day work = 1/12, B's = 1/24. Together = 1/12 + 1/24 = 3/24 = 1/8. So 8 days.",
   "expected_steps": {
+    "intro_speech": "Let's see how the two work rates fit together.",
     "steps": [
       {
         "label": "Step 1: One day work",
@@ -21,7 +22,7 @@
           "1 / 12 = 1/12 work/day",
           "1 / 24 = 1/24 work/day"
         ],
-        "speech": "A oka roju lo 1 by 12 work chestadu, B oka roju lo 1 by 24 work chestadu."
+        "speech": "A takes 12 days for the whole job, so that's one twelfth each day. B takes 24 days, so that's one twenty-fourth. Those are their daily shares."
       },
       {
         "label": "Step 2: Together",
@@ -30,18 +31,21 @@
           "1/12 + 1/24 = 3/24",
           "1/12 + 1/24 = 1/8"
         ],
-        "speech": "Rendu add cheste, 2 by 24 plus 1 by 24, ante 3 by 24, simplify cheste 1 by 8."
+        "speech": "Since they're working together, their daily shares add up. A's one twelfth is two twenty-fourths; add B's one twenty-fourth and that's three twenty-fourths, or one eighth per day."
       },
       {
         "label": "Step 3: Days",
         "lines": [
           "1 / (1/8) = 8 days"
         ],
-        "speech": "Oka roju lo 1 by 8 work aite, motham work 8 rojullo aipothundhi."
+        "speech": "So they get through one eighth of the job each day. The whole thing takes eight days—that's option B."
       }
     ],
-    "tip": "Together rate = sum of individual rates",
+    "tip": {
+      "display": "Together rate = sum of individual rates",
+      "speech": "When people work at the same time, their daily work rates add together."
+    },
     "answer": "8 days",
-    "answer_speech": "So they will finish the work in 8 days, option B."
+    "answer_speech": "So, eight days together. That's option B."
   }
 }

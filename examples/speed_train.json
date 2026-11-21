@@ -14,13 +14,14 @@
   "final_answer": "72 km/h",
   "solution": "Distance = 150 + 250 = 400 m. Speed = 400/20 = 20 m/s. 20 x 18/5 = 72 km/h.",
   "expected_steps": {
+    "intro_speech": "Let's work this out together.",
     "steps": [
       {
         "label": "Step 1: Total distance",
         "lines": [
           "150 + 250 = 400 m"
         ],
-        "speech": "Train platform ni cross cheyyali ante, train length plus platform length travel cheyyali. 150 plus 250 is 400 meters.",
+        "speech": "Right, for the train to clear the platform, its back has to get all the way past the end too. So we add the train's 150 metres to the platform's 250 metres: 400 metres altogether.",
         "visual": {
           "name": "train_crossing",
           "data": {
@@ -43,18 +44,21 @@
         "lines": [
           "400 / 20 = 20 m/s"
         ],
-        "speech": "Speed is distance by time. 400 by 20 is 20 meters per second."
+        "speech": "Those 400 metres take 20 seconds. In other words, the train covers 20 metres each second."
       },
       {
         "label": "Step 3: Convert",
         "lines": [
           "20 x 18/5 = 72 km/h"
         ],
-        "speech": "m/s ni km/h ki marchali ante 18 by 5 tho multiply cheyyali. 20 times 18 by 5 is 72 kilometres per hour."
+        "speech": "They want kilometres per hour, so let's switch units. Multiply 20 by 18 over 5, and we get 72 kilometres per hour."
       }
     ],
-    "tip": "m/s to km/h: multiply by 18/5",
+    "tip": {
+      "display": "m/s to km/h: multiply by 18/5",
+      "speech": "Once you have metres per second, multiply by 18 over 5 to get kilometres per hour."
+    },
     "answer": "72 km/h",
-    "answer_speech": "So the answer is 72 kilometres per hour, option A."
+    "answer_speech": "So there we go: 72 kilometres per hour, option A."
   }
 }

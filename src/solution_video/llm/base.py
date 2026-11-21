@@ -133,7 +133,7 @@ def prompt_for_question(
         "SPEECH LANGUAGE CONFIGURATION\n"
         f"Mode: {mode}\n"
         f"{mode_instructions[mode]}\n"
-        "Apply this mode consistently to every steps[*].speech, tip.speech, "
+        "Apply this mode consistently to intro_speech, every steps[*].speech, tip.speech, "
         "answer.speech, and any outro/CTA speech. Keep all display text separate "
         "from speech. Spell numbers in speakable words in the selected mode; "
         "say x as times, / as divided by, % as percent, and km/h as kilometres "

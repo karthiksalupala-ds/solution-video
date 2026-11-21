@@ -43,7 +43,7 @@ class CreditReserveError(VoiceTestError):
 @dataclass(frozen=True)
 class VoiceInput:
     name: str
-    text: str
+    text: str | None
 
 
 @dataclass(frozen=True)
@@ -124,6 +124,9 @@ def synthesize_voice(
     with tempfile.TemporaryDirectory(prefix="solution-video-voice-") as temp_name:
         temp_dir = Path(temp_name)
         for item in inputs:
+            if item.text is None:
+                clips.append(None)
+                continue
             if not item.text.strip():
                 clips.append(None)
                 warnings.append(f"{item.name}: narration text is empty; scene will render without voice")
@@ -198,6 +201,7 @@ def _synthesize_one(
         "language_mode": environment.get("SPEECH_LANGUAGE_MODE", "english").strip().lower(),
         "edge_rate": _edge_rate(environment) if provider_name == "edge_tts" else None,
         "timing_format": 1,
+        "normalization_format": 2,
     }
     key = hashlib.sha256(json.dumps(key_data, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
     cached = cache_dir / f"{key}.wav"
@@ -416,19 +420,20 @@ def normalize_audio_file(
     *,
     preserve_leading_silence: bool = False,
 ) -> float:
-    """Trim silence, normalize loudness, and return probed duration."""
+    """Normalize loudness and preserve complete clips when word timing is required."""
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise VoiceRuntimeError("ffmpeg is required to normalize voice audio but was not found on PATH")
-    silence_filter = (
-        "silenceremove=stop_periods=1:stop_duration=0.08:stop_threshold=-45dB"
-        if preserve_leading_silence
-        else "silenceremove=start_periods=1:start_duration=0.04:start_threshold=-45dB:"
-        "stop_periods=1:stop_duration=0.08:stop_threshold=-45dB"
-    )
+    audio_filter = "loudnorm=I=-18:TP=-1.5:LRA=11"
+    if not preserve_leading_silence:
+        audio_filter = (
+            "silenceremove=start_periods=1:start_duration=0.04:start_threshold=-45dB:"
+            "stop_periods=1:stop_duration=0.08:stop_threshold=-45dB,"
+            + audio_filter
+        )
     command = [
         ffmpeg, "-y", "-v", "error", "-i", str(source),
-        "-af", silence_filter + ",loudnorm=I=-18:TP=-1.5:LRA=11",
+        "-af", audio_filter,
         "-ar", "44100", "-ac", "1", "-c:a", "pcm_s16le", str(destination),
     ]
     try:
@@ -511,7 +516,11 @@ def estimate_voice(
     order = provider_order(env, provider_override)
     provider = next((name for name in order if name != "none"), "none")
     mode = env.get("SPEECH_LANGUAGE_MODE", "english").strip().lower() or "english"
-    characters = sum(len(normalize_speech(item.text, mode)) for item in inputs)
+    characters = sum(
+        len(normalize_speech(item.text, mode))
+        for item in inputs
+        if item.text is not None
+    )
     if provider == "elevenlabs":
         model = env.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2").strip()
         credits = characters

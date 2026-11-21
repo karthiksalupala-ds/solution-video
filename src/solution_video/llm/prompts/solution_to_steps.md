@@ -10,31 +10,36 @@ End the calculation sequence with a genuine machine-evaluable computation whose 
 
 Keep `display` (on-screen) and `speech` (spoken) separate. Apply the supplied speech-language configuration to every step speech and to any tip, answer, and outro/CTA speech. State the actual values and results in speech. Make operators and units speakable: say `x` as “times”, `/` as “divided by”, `%` as “percent”, and `km/h` as “kilometres per hour”; do not read raw calculation symbols aloud. Include `answer` as an object with `display` exactly equal to the supplied final answer, a spoken `speech` line that states the answer and correct option, and `correct_option` exactly equal to the supplied option letter. If present, `tip` must be an object with both `display` and `speech`; never return a bare string.
 
+Include a non-empty `intro_speech` string: one short, friendly opening that follows the spoken day/topic title. Do not reveal the final answer in the opening. The question and options are shown on screen, so do not read or repeat them in any speech field.
+
+Voice personality: sound like a friendly tutor explaining the idea to one learner, not an answer key or a presenter reading notes. Start with the meaning of the step in everyday language; briefly explain why the operation fits and what its result means; then weave in the relevant values and result. Use contractions and natural transitions such as “Right”, “So”, or “Now” when they fit; vary sentence rhythm and do not force every step into the same template. A brief rhetorical question is fine when it genuinely helps explain the idea, but avoid scripted audience interaction, filler, jokes, and repeated stock openings. Do not read each formula line word-for-word. Keep the explanation factual, concise, and complete; preserve the real values, units, and reasoning. Use one to three short sentences per step as needed, and end with a warm, clear answer.
+
 Never include a `source` field. Do not alter the question, options, or final answer.
 
 Valid example (use its structure and calculation detail; replace every value and line with values derived from the current input):
 ```json
 {
+  "intro_speech": "Okay, let's work this out together.",
   "steps": [
     {
       "label": "Step 1: Add train and platform lengths",
       "lines": ["150 + 250 = 400 m"],
-      "speech": "First, one hundred fifty metres plus two hundred fifty metres equals four hundred metres."
+      "speech": "Right, the train has to clear the whole platform, not just get to the end. So we add its one hundred fifty metres to the platform's two hundred fifty metres: four hundred metres altogether."
     },
     {
       "label": "Step 2: Find speed in meters per second",
       "lines": ["400 / 20 = 20 m/s"],
-      "speech": "Next, four hundred metres divided by twenty seconds is twenty metres per second."
+      "speech": "Those four hundred metres take twenty seconds. In other words, the train covers twenty metres each second."
     },
     {
       "label": "Step 3: Convert to kilometres per hour",
       "lines": ["20 x 18/5 = 72 km/h"],
-      "speech": "Twenty metres per second times eighteen divided by five is seventy-two kilometres per hour."
+      "speech": "They want kilometres per hour, so let's switch units. Multiply twenty by eighteen over five, and we get seventy-two kilometres per hour."
     }
   ],
   "answer": {
     "display": "72 km/h",
-    "speech": "So the answer is seventy-two kilometres per hour, option A.",
+    "speech": "So there we go: seventy-two kilometres per hour, option A.",
     "correct_option": "A"
   },
   "tip": {

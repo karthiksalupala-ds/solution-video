@@ -60,6 +60,19 @@ def test_provider_order_respects_opt_in_and_fallback_flag():
         runtime.provider_order({"VOICE_PROVIDER_ORDER": "none,edge_tts"})
 
 
+def test_intentionally_silent_scene_is_not_synthesized_or_warned(tmp_path):
+    result = synthesize_voice(
+        (VoiceInput("question", None),),
+        cache_dir=tmp_path / "cache",
+        provider_factory=lambda *_args: pytest.fail("silent scene must not create a provider"),
+    )
+
+    assert result.clips == (None,)
+    assert result.warnings == ()
+    assert result.provider == "none"
+    assert estimate_voice((VoiceInput("question", None),))[2] == 0
+
+
 def test_cache_hit_skips_second_synthesis_and_reports_no_credits(tmp_path, monkeypatch):
     calls = []
 
@@ -138,7 +151,7 @@ def test_edge_rate_is_validated_and_passed_to_provider(tmp_path):
     assert any("EDGE_TTS_RATE" in warning for warning in result.warnings)
 
 
-def test_edge_audio_normalization_preserves_leading_word_offsets(tmp_path, monkeypatch):
+def test_edge_audio_normalization_preserves_complete_boundary_timed_clip(tmp_path, monkeypatch):
     commands = []
     monkeypatch.setattr(runtime.shutil, "which", lambda _name: "ffmpeg.exe")
     monkeypatch.setattr(
@@ -155,8 +168,7 @@ def test_edge_audio_normalization_preserves_leading_word_offsets(tmp_path, monke
     )
     filter_value = commands[0][commands[0].index("-af") + 1]
 
-    assert "stop_periods=1" in filter_value
-    assert "start_periods=1" not in filter_value
+    assert filter_value == "loudnorm=I=-18:TP=-1.5:LRA=11"
 
 
 def test_provider_failure_falls_back_to_edge_and_surfaces_warning(tmp_path):

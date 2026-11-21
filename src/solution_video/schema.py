@@ -111,11 +111,17 @@ class SolutionSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     question_input: QuestionInput
+    intro_speech: str | None = Field(default=None, max_length=180)
     steps: list[StepSpec] = Field(min_length=1, max_length=8)
     answer: AnswerSpec
     tip: TipSpec | None = None
     cta: TipSpec | None = None
     seed: int = Field(default=1, ge=0, le=2**31 - 1)
+
+    @field_validator("intro_speech")
+    @classmethod
+    def strip_intro_speech(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "SolutionSpec":
@@ -127,6 +133,9 @@ class SolutionSpec(BaseModel):
             raise ValueError("Expected steps JSON with question_input, or a today.json payload containing expected_steps")
         question_fields = {key: value for key, value in payload.items() if key != "expected_steps"}
         answer = expected.get("answer", payload.get("final_answer"))
+        tip = expected.get("tip")
+        if isinstance(tip, str):
+            tip = {"display": tip}
         steps = []
         for raw_step in expected.get("steps", []):
             step = dict(raw_step)
@@ -135,13 +144,14 @@ class SolutionSpec(BaseModel):
             steps.append(step)
         return cls.model_validate({
             "question_input": question_fields,
+            "intro_speech": expected.get("intro_speech"),
             "steps": steps,
             "answer": {
                 "display": answer,
                 "speech": expected.get("answer_speech", ""),
                 "correct_option": payload.get("correct_option"),
             },
-            "tip": {"display": expected["tip"]} if expected.get("tip") else None,
+            "tip": tip,
             "seed": payload.get("day", 1),
         })
 

@@ -83,6 +83,12 @@ Prompt packs 05 and 07 in docs/prompts are superseded by prompts_one_by_one/1-4.
 - `solution-video render --sync-report` prints expected word-boundary and actual reveal times for QA.
 - HF Space file inputs are identified from `Client.view_api(return_format="dict")` and wrapped with `gradio_client.handle_file`; the configured reference audio is resolved and checked before client use. HF warnings retain provider error details after credential redaction. `HF_TTS_REQUEST_LIMIT` and `HF_TTS_REQUEST_PAUSE_S` support bounded, paced runs.
 - Per-scene voice metadata includes synthesized clip duration.
+- English is the default narration mode. Standard render examples use English speech; fixed-input renders speak supplied `speech` text verbatim, because Edge TTS does not translate. Other language modes remain opt-in.
+- Edge clips carrying word-boundary timing must not be silence-trimmed: the old filter reduced a 12.43-second synthesized clip to 0.96 seconds and compressed its reveal timings. Edge audio cache keys now distinguish the complete-audio normalization behavior.
+- `time_sec` is a target, not a hard narration cutoff. Complete narration may run longer than the target, up to 75 seconds; do not omit spoken explanation to force a shorter render.
+- Generated and standard-example speech should explain why each calculation applies, connect steps conversationally, and state the actual values/results. Keep narration concise and factual; do not merely read the display equations.
+- The target voice is a friendly tutor speaking to one learner: explain the intuition first, use varied natural phrasing and contractions where appropriate, and avoid a repeated sentence template. Prompt guidance improves generation but does not deterministically score whether prose sounds human.
+- Voiced renders say the day/topic and an LLM-written short intro, then speak the steps/tip/answer; they do not narrate the question or its options, which remain visible. Missing intro speech is repaired during generation, and prompt text participates in the generated-step cache key so old scripts cannot bypass the new instructions.
 
 ## Phase 3 Slice A: core scene motion and polish
 

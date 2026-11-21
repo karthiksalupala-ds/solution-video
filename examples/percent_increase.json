@@ -14,24 +14,28 @@
   "final_answer": "25%",
   "solution": "Increase = 100 - 80 = 20. Percentage increase = 20/80 x 100 = 25%.",
   "expected_steps": {
+    "intro_speech": "Let's see how much the price changed from where it started.",
     "steps": [
       {
         "label": "Step 1: Increase",
         "lines": [
           "100 - 80 = 20"
         ],
-        "speech": "First, price entha perigindho chudali. 100 minus 80 is 20."
+        "speech": "The price went from 80 to 100 rupees, so it went up by 20 rupees. That's the increase."
       },
       {
         "label": "Step 2: Percentage",
         "lines": [
           "20 / 80 x 100 = 25%"
         ],
-        "speech": "Percentage increase ante, increase ni original price tho divide chesi 100 tho multiply cheyyali. 20 by 80 times 100 is 25 percent."
+        "speech": "A percentage increase is based on the original price—80 rupees, not 100. So compare 20 with 80, then multiply by 100: that's 25 percent."
       }
     ],
-    "tip": "% change = (Change / Original) x 100",
+    "tip": {
+      "display": "% change = (Change / Original) x 100",
+      "speech": "For a percentage change, compare the change with the original amount."
+    },
     "answer": "25%",
-    "answer_speech": "So the percentage increase is 25 percent, option B."
+    "answer_speech": "So the price went up by 25 percent. That's option B."
   }
 }
