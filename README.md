@@ -4,6 +4,14 @@ Turn a verified aptitude-question JSON file into a vertical MP4 plus adjacent me
 
 > **Voice status:** rendering can synthesize English narration using the configured provider chain, align scene duration to each clip, and cache audio locally. `--no-voice` always skips provider access and still produces a valid SFX-backed video.
 
+## v0.2.1 verification status
+
+- Full pytest suite: 223 tests pass.
+- `NARRATION_STYLE=concise` is the default; `--narration-style tutor` keeps the longer conversational style.
+- Edge TTS checks passed for `speed_train` and `car_speed` in concise and tutor styles.
+- Final mixed audio passed the -1.5 dB peak limiter in all four re-measured renders.
+- Question narration includes a short read cue, and the title scene is capped at 4.5 seconds.
+
 ## Install
 
 Python 3.10+ and FFmpeg (including `ffprobe`) are required.

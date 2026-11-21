@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 - 2026-11-21
+
+- Add `concise` and `tutor` narration styles, with concise as the default.
+- Add a short question-read cue and bounded question/title pacing.
+- Reject identity, filler, and repeated-result equations in the accuracy gate.
+- Add final peak limiting to protect rendered audio peaks while preserving mix level.
+- Treat over-cap generated narration as an accuracy/output failure rather than speeding speech.
+
 ## 0.2.0 - 2026-10-17
 
 - Add configurable voice providers, per-scene narration, audio mixing, caching, credit safeguards, captions, and narration/reveal synchronization.
