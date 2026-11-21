@@ -3,19 +3,33 @@ name: Render examples
 on:
   workflow_dispatch:
     inputs:
-      input_json:
-        description: "Example JSON path inside examples/"
+      style:
+        description: "Style to include in the speed-train smoke run"
         required: true
-        default: examples/di_average.json
-        type: string
-      voice:
-        description: "Request speech synthesis"
-        required: true
-        default: "off"
+        default: kinetic_typography
         type: choice
         options:
-          - "off"
-          - "on"
+          - classic
+          - glassmorphism
+          - neon_glow
+          - glitch
+          - halftone_dots
+          - dithering
+          - risograph_print
+          - pixel_art
+          - ascii_art
+          - vaporwave_grid
+          - topographic_lines
+          - flow_fields
+          - particle_swarm
+          - metaballs
+          - liquid_morph
+          - holographic_foil
+          - kinetic_typography
+          - bauhaus_shapes
+          - paper_cutout
+          - clay_3d
+          - ray_marched_fractals
   pull_request:
 
 permissions:
@@ -24,7 +38,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -41,20 +55,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Validate workflow-dispatch selection
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          INPUT_JSON: ${{ inputs.input_json }}
-        run: |
-          python - <<'PY'
-          import os
-          from pathlib import Path
-          root = Path.cwd().resolve()
-          path = (root / os.environ["INPUT_JSON"]).resolve()
-          if path.parent != (root / "examples").resolve() or path.suffix.lower() != ".json" or not path.is_file():
-              raise SystemExit("input_json must name an existing JSON file directly inside examples/")
-          PY
-
       - name: Install package and test dependencies
         id: install
         run: |
@@ -68,29 +68,39 @@ jobs:
       - name: Render and report timings
         id: render
         env:
-          INPUT_JSON: ${{ inputs.input_json || 'examples/di_average.json' }}
-          VOICE_SETTING: ${{ inputs.voice || 'off' }}
+          REQUESTED_STYLE: ${{ inputs.style || 'kinetic_typography' }}
         run: |
           set -euo pipefail
           started=$(date +%s)
           mkdir -p out
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             inputs=(examples/di_average.json examples/percent_increase.json examples/speed_train.json examples/time_work.json)
-            voice_setting=off
+            styles=(classic)
           else
-            inputs=("$INPUT_JSON")
-            voice_setting="$VOICE_SETTING"
-          fi
-          if [[ "$voice_setting" == "on" ]]; then
-            solution-video voice-test
+            inputs=(examples/speed_train.json)
+            candidates=("$REQUESTED_STYLE" classic glassmorphism bauhaus_shapes)
+            styles=()
+            for candidate in "${candidates[@]}"; do
+              if [[ ! " ${styles[*]} " =~ " ${candidate} " ]]; then
+                styles+=("$candidate")
+              fi
+              [[ ${#styles[@]} -ge 3 ]] && break
+            done
           fi
           for input in "${inputs[@]}"; do
             name=$(basename "$input" .json)
-            args=(render --input "$input" --out "out/$name.mp4")
-            if [[ "$voice_setting" == "off" ]]; then
-              args+=(--no-voice)
-            fi
-            solution-video "${args[@]}"
+            for style in "${styles[@]}"; do
+              output="out/$name-$style.mp4"
+              solution-video render --input "$input" --out "$output" --style "$style" --no-voice
+              python - "$output" <<'PY'
+          import json, sys
+          from pathlib import Path
+          meta = Path(sys.argv[1]).with_suffix(".meta.json")
+          data = json.loads(meta.read_text(encoding="utf-8"))
+          if data.get("answer_verified") is not True:
+              raise SystemExit(f"accuracy metadata failed: {meta}")
+          PY
+            done
           done
           finished=$(date +%s)
           echo "seconds=$((finished-started))" >> "$GITHUB_OUTPUT"
@@ -100,7 +110,7 @@ jobs:
             echo "- Package install: ${{ steps.install.outputs.seconds }} seconds"
             echo "- Render/test step: $((finished-started)) seconds"
             echo "- Measured job elapsed: $((finished-${job_start:-finished})) seconds (timer starts after checkout/setup-python)"
-            echo "- Voice selection: $voice_setting"
+            echo "- Styles: ${styles[*]}"
             echo
             echo "| Artifact | Size (bytes) |"
             echo "|---|---:|"
@@ -114,5 +124,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: solution-videos
-          path: out/*.mp4
+          path: |
+            out/*.mp4
+            out/*.meta.json
           if-no-files-found: error

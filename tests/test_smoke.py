@@ -31,3 +31,4 @@ def test_fonts_present():
 
 def test_font_license_present():
     assert (ROOT / "fonts" / "OFL.txt").exists()
+    assert (ROOT / "fonts" / "PressStart2P-OFL.txt").exists()

@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import math
+import re
+import shutil
+import subprocess
 import wave
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
@@ -48,6 +52,54 @@ class AudioMixer:
     def mix(self) -> np.ndarray:
         peak = float(np.max(np.abs(self.samples)))
         return self.samples if peak == 0 else self.samples / peak * 0.32
+
+
+class LoudnessError(RuntimeError):
+    """Raised when a final mix cannot meet the delivery loudness floor."""
+
+
+@dataclass(frozen=True)
+class LoudnessInfo:
+    mean_db: float
+    max_db: float
+
+
+def normalize_final_mix(source: Path, destination: Path, *, narration_exists: bool) -> LoudnessInfo:
+    """Apply final loudnorm and return a conservative volumedetect measurement."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise LoudnessError("ffmpeg is required to normalize the final audio mix")
+    command = [
+        ffmpeg, "-y", "-v", "error", "-i", str(source), "-af",
+        "loudnorm=I=-16:TP=-1.5:LRA=11,alimiter=limit=-1.5dB:level=0", "-ac", "1", "-ar", "44100", str(destination),
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LoudnessError(f"final loudness normalization failed: {exc}") from exc
+    info = measure_loudness(destination)
+    if narration_exists and info.mean_db < -40.0:
+        raise LoudnessError(f"narrated mix mean volume is {info.mean_db:.1f} dB, below -40 dB")
+    return info
+
+
+def measure_loudness(path: Path) -> LoudnessInfo:
+    """Read ffmpeg volumedetect metrics without printing provider or media details."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise LoudnessError("ffmpeg is required to measure final audio loudness")
+    try:
+        completed = subprocess.run(
+            [ffmpeg, "-v", "info", "-i", str(path), "-af", "volumedetect", "-f", "null", "-"],
+            check=True, capture_output=True, text=True, timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LoudnessError(f"final loudness measurement failed: {exc}") from exc
+    mean = re.search(r"mean_volume:\s*([-+0-9.]+) dB", completed.stderr)
+    maximum = re.search(r"max_volume:\s*([-+0-9.]+) dB", completed.stderr)
+    if not mean or not maximum:
+        raise LoudnessError("ffmpeg did not return volumedetect metrics")
+    return LoudnessInfo(float(mean.group(1)), float(maximum.group(1)))
 
 
 def write_wav(path: str | Path, samples: np.ndarray, sample_rate: int = 44_100) -> None:

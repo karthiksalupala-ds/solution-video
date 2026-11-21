@@ -10,7 +10,7 @@ from ..engine.text import reveal_chars
 from ..engine.theme import Theme
 from ..schema import StepSpec
 from ..plugins import draw_visual
-from .common import draw_footer, draw_header, draw_layout, fit, make_canvas
+from .common import draw_footer, draw_header, draw_layout, draw_surface, fit, make_canvas
 
 
 class StepScene:
@@ -82,12 +82,10 @@ class StepScene:
             y = base_y + index * (card_height + card_gap)
             drift = (1 - progress) * theme.motion.get("step_card_slide_px", 46)
             card_top, card_bottom = y + drift, y + card_height + drift
-            canvas.rounded_rect(
-                (margin, card_top, theme.canvas.width - margin, card_bottom),
-                28,
-                (*theme.colors["info"], round(208 * progress)),
-                (*theme.colors["text"], round(58 * progress)),
-                2,
+            draw_surface(
+                canvas, theme, "result" if "=" in line else "working",
+                (margin, card_top, theme.canvas.width - margin, card_bottom), 28,
+                seed=self.step_index, time_s=time_s, opacity=progress,
             )
             working, separator, result = line.rpartition("=")
             if separator:
@@ -101,7 +99,7 @@ class StepScene:
                         theme.canvas.width - 2 * margin - 52,
                         card_height * 0.42,
                         theme.sizes.get("formula_work_px", 40),
-                        2,
+                        2, min_size=38,
                     )
                     draw_layout(
                         canvas,
@@ -113,6 +111,7 @@ class StepScene:
                         role="medium",
                         alpha=round(255 * progress),
                         line_gap=4,
+                        time_s=time_s - start_s,
                     )
                 result_layout = fit(
                     theme,
@@ -121,7 +120,7 @@ class StepScene:
                     theme.canvas.width - 2 * margin - 52,
                     card_height * 0.45,
                     theme.sizes.get("formula_result_px", 52),
-                    2,
+                    2, min_size=48,
                 )
                 result_color = "accent" if self.step.emphasis and self.step.emphasis in line else "success"
                 draw_layout(
@@ -135,6 +134,7 @@ class StepScene:
                     color=result_color,
                     alpha=round(255 * progress),
                     line_gap=2,
+                    time_s=time_s - start_s,
                 )
             else:
                 text = reveal_chars(line, progress)
@@ -146,7 +146,7 @@ class StepScene:
                     theme.canvas.width - 2 * margin - 52,
                     card_height - 40,
                     theme.sizes.get("formula_result_px", 52) if emphasized else theme.sizes.get("formula_work_px", 44),
-                    2,
+                    2, min_size=38,
                 )
                 draw_layout(
                     canvas,
@@ -159,6 +159,7 @@ class StepScene:
                     color="accent" if emphasized else "text",
                     alpha=round(255 * progress),
                     line_gap=4,
+                    time_s=time_s - start_s,
                 )
         if show_visual and self.step.visual is not None:
             visual_top = base_y + line_count * (card_height + card_gap) + 24

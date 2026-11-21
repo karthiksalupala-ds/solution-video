@@ -6,7 +6,7 @@ from ..engine.assets import FontBook
 from ..engine.easing import out_back, progress_at
 from ..engine.theme import Theme
 from ..schema import AnswerSpec, QuestionInput
-from .common import draw_confetti, draw_footer, draw_header, draw_layout, fit, make_canvas
+from .common import draw_confetti, draw_footer, draw_header, draw_layout, draw_surface, fit, make_canvas
 
 
 class AnswerScene:
@@ -21,12 +21,8 @@ class AnswerScene:
         width = 600 * progress
         banner_top = round(theme.canvas.height * theme.motion.get("answer_banner_top_ratio", 0.22))
         banner_bottom = banner_top + theme.motion.get("answer_banner_height_px", 176)
-        canvas.rounded_rect(
-            (theme.canvas.width / 2 - width / 2, banner_top,
-             theme.canvas.width / 2 + width / 2, banner_bottom),
-            38,
-            (*theme.colors["success"], round(230 * progress)),
-        )
+        draw_surface(canvas, theme, "answer", (theme.canvas.width / 2 - width / 2, banner_top,
+             theme.canvas.width / 2 + width / 2, banner_bottom), 38, seed=self.question.day, time_s=time_s, opacity=progress)
         layout = fit(
             theme,
             "bold",
@@ -64,14 +60,9 @@ class AnswerScene:
             slide = (1 - option_progress) * theme.motion.get("answer_option_slide_px", 42)
             background = theme.colors["success"] if correct else theme.colors["info"]
             alpha = round((238 if correct else 145) * option_progress)
-            canvas.rounded_rect(
-                (theme.safe_margin_px + slide, y,
-                 theme.canvas.width - theme.safe_margin_px + slide, y + option_height),
-                option_height / 2,
-                (*background, alpha),
-                (*theme.colors["text"], round(72 * option_progress)),
-                2,
-            )
+            draw_surface(canvas, theme, "answer" if correct else "option", (theme.safe_margin_px + slide, y,
+                 theme.canvas.width - theme.safe_margin_px + slide, y + option_height), option_height / 2,
+                 seed=self.question.day, time_s=time_s, opacity=option_progress)
             badge_size = min(64, option_height - 28)
             badge_x, badge_y = theme.safe_margin_px + 18 + slide, y + (option_height - badge_size) / 2
             badge_color = theme.colors["accent"] if correct else theme.colors["muted"]

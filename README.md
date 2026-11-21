@@ -77,6 +77,35 @@ The accuracy gate checks the selected option and answer, evaluates arithmetic li
 
 Themes are JSON files in [themes/](themes); pass one with `--theme path/to/theme.json`. Fonts ship with the package. Scene renderers live in `src/solution_video/scenes/`; optional visual plugins live in `src/solution_video/plugins/`. A step may include `visual: {"name": ..., "data": {...}}`: `bar_chart` reads `values`, `labels`, optional `highlight_indices`, and `title`; `train_crossing` reads train/platform lengths, crossing time, units, and display labels including `distance_label`. The train visual stages the platform entry/exit, travelled-distance counter, and elapsed time from those input values. Plugin data is supplied by the input, while motion and sizing come from the theme. A missing/unknown plugin or invalid data warns and leaves the generic step visible. See [CONTRIBUTING.md](CONTRIBUTING.md) for the extension guide.
 
+## Choosing and adding styles
+
+The theme's `style` selects the default. Override it per run with `--style NAME`, or use `--style auto` for the deterministic day rotation. Auto skips Tier 3 styles unless `STYLE_ALLOW_HEAVY=1` is set. `style_allowlist` in the theme is the explicit list available for selection and auto rotation; remove styles you do not want. Explicitly requesting an excluded style falls back to `classic` with a warning.
+
+Per-scene styles are off by default. Configure a scene map in the theme and opt in for a render:
+
+```json
+{
+  "style": "classic",
+  "style_allowlist": ["classic", "neon_glow", "glassmorphism"],
+  "scene_styles": {"title": "neon_glow", "step": "glassmorphism"}
+}
+```
+
+```powershell
+solution-video render --input examples/speed_train.json --out out/mixed.mp4 --allow-scene-style-overrides --no-voice
+```
+
+### Add a style in about 30 minutes
+
+1. Add a deterministic `StylePack` in `src/solution_video/styles/` (or `effects.py` for small packs); keep topic text and answers out of style code.
+2. Register it in `styles/__init__.py`, add its theme palette/motion settings, and include it in `style_allowlist`.
+3. Add a deterministic frame test and a focused behavior/fallback test.
+4. Run `pytest -q`, render all four examples with `--style NAME --no-voice`, then inspect a contact sheet.
+5. Run `solution-video bench --style NAME` (or `--style all`) with `--example examples/speed_train.json --frames 60` and check its tier budget; `solution-video gallery --example examples/speed_train.json` builds sheets, a short reel, and `index.md`.
+6. Update `STYLES_PLAN.md` and `DECISIONS.md` with measured limits and honest visual notes.
+
+Known limits: benchmark estimates are CPU- and machine-dependent; gallery MP4 sizes are 2-second preview sizes, not full-video size qualification. The runtime validates every rendered file against the 16 MiB/75-second contract, but dedicated 60/75-second per-style size runs and automated 4.5:1 local-contrast reports remain future work. Tier 3 styles are omitted from auto unless explicitly enabled. `ray_marched_fractals` is the CPU-safe 2D Julia fallback, not 3D ray marching. Kinetic typography currently uses proportional word pacing rather than Edge word-boundary timestamps; scene and step cues still use the existing timeline.
+
 ## Voice listening test
 
 The `voice-test` command is a historical listening comparison using the approved variants in `examples/voice_tests/approved_variants.json` and narration from `examples/speed_train.json`. It previews the text and character/credit estimates without network access. The current preference for video narration is English only; Telugu and Tanglish samples are retained for reference and are not selected for the video voice:
@@ -140,7 +169,7 @@ Alternatively, install the package into the bot's Python environment and call `r
 
 ## GitHub Actions
 
-Pull requests run the test suite and render all aptitude examples. `workflow_dispatch` accepts an example JSON path and a voice on/off selection, then uploads the MP4 artifact and reports install/render times and file size in the job summary. No LLM key is needed to render checked-in fixtures; provider credentials should only be added as GitHub Secrets when a workflow is intentionally configured to synthesize voice.
+Pull requests run the test suite and render all four examples in `classic`. To check styles on GitHub, open **Actions → Render examples → Run workflow**, select a branch and style, then run it; it renders `speed_train` in that style plus two distinct baseline styles, all without voice or provider calls. The job uploads MP4/meta artifacts and reports install/render times and sizes. The GitHub runner requires pushed commits; uncommitted local changes are not included.
 
 ## License
 

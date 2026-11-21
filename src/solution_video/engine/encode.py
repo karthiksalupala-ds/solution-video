@@ -21,14 +21,24 @@ def ffmpeg_path() -> str:
     return path
 
 
-def encode_frames(frames: Iterable[Image.Image], width: int, height: int, fps: int, audio_path: Path, output_path: Path, duration_s: float) -> None:
+def encode_frames(
+    frames: Iterable[Image.Image],
+    width: int,
+    height: int,
+    fps: int,
+    audio_path: Path,
+    output_path: Path,
+    duration_s: float,
+    *,
+    crf: int = 23,
+) -> None:
     """Pipe RGB frames directly to FFmpeg; never write temporary image frames."""
-    if width <= 0 or height <= 0 or fps <= 0 or duration_s <= 0:
-        raise EncodeError("width, height, fps, and duration must be positive")
+    if width <= 0 or height <= 0 or fps <= 0 or duration_s <= 0 or not 0 <= crf <= 51:
+        raise EncodeError("width, height, FPS, duration, and CRF must be within valid ranges")
     command = [
         ffmpeg_path(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
         "-s", f"{width}x{height}", "-r", str(fps), "-i", "-", "-i", str(audio_path),
-        "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "medium", "-crf", str(crf), "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", "-shortest", str(output_path),
     ]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)

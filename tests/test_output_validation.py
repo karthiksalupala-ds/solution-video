@@ -13,6 +13,7 @@ from solution_video.engine.output import (
     MediaInfo,
     OutputValidationError,
     _reencode_to_limit,
+    _validate_streams,
     validate_output,
 )
 
@@ -87,6 +88,14 @@ def test_video_duration_over_75_seconds_is_rejected(tmp_path, monkeypatch):
 
     with pytest.raises(OutputValidationError, match="greater than the 75-second limit"):
         validate_output(output)
+
+
+@pytest.mark.parametrize("duration_s", (60.0, 75.0))
+def test_review_duration_boundaries_pass(duration_s):
+    _validate_streams(
+        MediaInfo("h264", "aac", "yuv420p", 720, 1280, 30.0, duration_s),
+        expect_audio=True,
+    )
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg") or not shutil.which("ffprobe"), reason="ffmpeg/ffprobe are required")

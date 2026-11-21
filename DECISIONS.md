@@ -98,6 +98,51 @@ Prompt packs 05 and 07 in docs/prompts are superseded by prompts_one_by_one/1-4.
 - Contact-sheet review found three improvements: anchor front-entry/rear-exit markers to the platform boundaries and keep labels inside the frame; shorten the count-up and train animations so they finish within their narration scene; preserve enough equation-card height for multi-line steps before drawing a plugin. These were implemented, with tests covering visual animation, example wiring, and generic fallback.
 - Validation: `pytest -q` passed (149 tests). All four examples rendered with Edge TTS, `answer_verified:true`, H.264/AAC, yuv420p, 720x1280 at 30 fps, and under 16 MB / 75 seconds. `speed_train` and `di_average` exercise the plugins; `time_work` and `percent_increase` validate the unchanged generic path. Final outputs and contact sheets are under `out/phase3/`.
 
+## Phase 3 Batch A: surface and post-effect styles
+
+- Registered `neon_glow`, `glassmorphism`, `glitch`, `halftone_dots`, `dithering`, `risograph_print`, `pixel_art`, and `ascii_art`; `glass_lite` remains a compatibility alias. Palette colors, effect colors, and style-specific animation rates are stored in `themes/default.json`. Press Start 2P is bundled under its OFL license.
+- Effects run on visual layers and preserve a dilated text mask for glitch and pixel-art postprocessing. Glitch bursts are seeded and limited to the configured 3–8 frame cue window; pixel-art scene animation is sampled at its configured 12 fps without changing narration timing.
+- Gallery review generated six-frame sheets for all nine registered styles (including classic) across the four examples under `out/style-batch-a/gallery/`. Review refinements: neon glow layers merged at half resolution; glass card tint reduced; glitch text exclusion widened and RGB split added; halftone spacing widened and generated at half resolution; dithering retained a fixed Bayer phase; risograph uses a deterministic 10 fps registration jitter; pixel-art scene time is quantized to 12 fps; ASCII glyph cells were enlarged.
+- Three-point self-review: neon — the grid can compete with lower text; the glow is subtle at phone scale; unused lower space remains visible. Glass — blobs add depth; cards still read dark; the blur is most visible at card edges. Glitch — the effect reads clearly at cue windows; displacement can approach the text exclusion halo; most evenly sampled frames do not capture its brief burst. Halftone — strong print identity; background dots remain visually dense; tiny chart labels are least distinct. Dithering — crisp semantic text; stable background; palette banding is visible. Risograph — legible paper contrast; spot inks are restrained; some cards read more like flat fills than misregistered print. Pixel art — unmistakable pixel treatment; body text stays sharp; pixel headers are intentionally blocky. ASCII — distinct tiled texture; glyph cells are now less dense; fine visual detail is abstracted.
+- Validation: `pytest -q` passed (173 tests); `compileall` and `git diff --check` passed. Six-frame contact sheets were regenerated for all nine registered styles across all four examples. A final no-voice `speed_train`/`glassmorphism` MP4 is verified (`answer_verified:true`, 35.4 s, 1,320,112 bytes; H.264/AAC, yuv420p, 720x1280, 30 fps, faststart).
+- Optimized single-worker projections for the 35.4-second `speed_train` plan (30 sampled frames): ASCII 32.36 s, classic 15.20 s, dithering 28.81 s, glassmorphism 46.17 s, glitch 14.50 s, halftone 35.97 s, neon 65.67 s, pixel art 35.54 s, risograph 58.34 s. Two-process benchmark projections were respectively 36.87 s, 18.03 s, 31.53 s, 54.59 s, 19.44 s, 39.76 s, 85.63 s, 37.89 s, and 63.27 s. Two processes were slower in every sampled comparison; production rendering remains single-process. These are local short-sample estimates, not GitHub Actions 60-second measurements.
+- Full acceptance matrix: all 32 no-voice MP4s across the eight new styles and four examples passed ffprobe plus matching-meta verification: H.264/AAC, 720x1280, yuv420p, 30 fps, 30--42 seconds, and under 16 MiB. This includes the completed ASCII rerenders after fixing the missing transition `value_noise` import and bounded Windows temporary-WAV cleanup.
+- Outstanding acceptance work: per-frame contrast-ratio report and 60/75-second output-size checks. The matrix passes the delivery contract, but do not treat the style batch as fully qualified until contrast and long-duration size checks pass.
+
+## Phase 3 Batch B: generative background styles
+
+- Registered `vaporwave_grid`, `topographic_lines`, `flow_fields`, `particle_swarm`, `metaballs`, `liquid_morph`, and `holographic_foil`. The packs use seeded NumPy fields, half-resolution particle/blob/composite layers, cue-reactive motion, theme palettes, protected text/card surfaces, and classic fallback through the style integration.
+- Validation: `pytest -q` passed (188 tests) after the Batch B implementation. The 7-style × 4-example no-voice matrix passed 28/28: every MP4 was H.264/AAC, 720×1280, yuv420p, 30 fps, ≤75 seconds, ≤16 MiB, and matching metadata reported `answer_verified:true`. Six-frame galleries were generated for all 28 style/example combinations under `out/style-batch-b/gallery/`.
+- Local 30-frame `speed_train` projections (35-second plan):
+  - vaporwave_grid: 105.94 ms/frame / 112.72 s one core; 77.83 ms/frame / 82.81 s with 2 workers.
+  - topographic_lines: 59.89 / 63.72 s; 62.02 / 65.99 s with 2 workers.
+  - flow_fields: 58.01 / 61.72 s; 58.07 / 61.79 s with 2 workers.
+  - particle_swarm: 46.73 / 49.72 s; 43.29 / 46.06 s with 2 workers.
+  - metaballs: 69.04 / 73.46 s; 55.92 / 59.50 s with 2 workers.
+  - liquid_morph: 49.69 / 52.88 s; 42.37 / 45.08 s with 2 workers.
+  - holographic_foil: 56.35 / 59.96 s; 35.07 / 37.31 s with 2 workers.
+- Visual review: vaporwave has clear perspective identity but the brightest horizontal lines should stay away from formula cards; topography is legible with opaque cards but contour density competes in question scenes; flow fields remain subtle and readable; particle and metaball motion stays behind semantic surfaces; liquid morph is restrained and stable; holographic foil maintains its dark card plates and low-alpha sweep.
+- Three-point contact-sheet critique/fix pass: (1) vaporwave grid/foil cards retain clear high-contrast plates; (2) topographic contour spacing and flow/particle density stay subordinate to text; (3) slow-moving metaball/liquid fields do not distort or repaint protected text. No second rerender was required after this representative fix pass.
+- Outstanding acceptance work: automated 4.5:1 local-contrast report, 60/75-second file-size tests, and GitHub Actions runner benchmarks. No live provider calls, secrets, commits, or tags were used.
+
+## Phase 3 Batch C: illustrated, typographic, and 3D-ish styles
+
+- Added and registered `kinetic_typography`, `bauhaus_shapes`, `paper_cutout`, `clay_3d`, and `ray_marched_fractals` with theme-driven palettes and deterministic behavior. Kinetic question/step words keep their precomputed wrapped line positions and reveal with proportional easing; numeric/unit tokens use the accent color. Bauhaus uses flat geometric layers, paper-cutout uses seeded torn plates/shadows and 12 fps background drift, clay uses half-resolution mask shading, and fractals use a 180×320 2D Julia palette-cycling fallback (not 3D ray marching).
+- Fixed a clay-card radius edge case on narrow animated answer cards; rerendered the affected speed-train and data-interpretation examples.
+- Validation: 20/20 no-voice MP4s passed ffprobe/meta checks (H.264/AAC, 720×1280, yuv420p, 30 fps, ≤75 s, ≤16 MiB, `answer_verified:true`). Six-frame speed-train contact sheets are in `out/style-batch-c/gallery/`. `pytest -q` passed (200 tests); compileall and `git diff --check` passed.
+- Isolated 60-frame benchmark, 35.4-second `speed_train` render projection:
+
+| Style | Tier | 1 worker ms/frame | 1 worker estimate | 2 workers ms/frame | 2 worker estimate |
+|---|---:|---:|---:|---:|---:|
+| kinetic_typography | 1 | 7.73 | 8.23 s | 9.26 | 9.86 s |
+| bauhaus_shapes | 1 | 9.57 | 10.18 s | 10.33 | 10.99 s |
+| paper_cutout | 2 | 64.01 | 68.11 s | 71.94 | 76.54 s |
+| clay_3d | 2 | 47.56 | 50.61 s | 53.91 | 57.36 s |
+| ray_marched_fractals (2D Julia fallback) | 3 | 27.91 | 29.70 s | 30.41 | 32.36 s |
+
+- Contact-sheet review/critique: kinetic typography reveals without reflow but sampled mid-video frames mostly show completed copy; Bauhaus is distinctive but its large geometry can compete near the title; paper cutout has readable plates but remains texture-heavy; clay cards are soft and readable though the background is pale; Julia coloring is vivid and needs dark cards for legibility. The clay corner-radius fix was rendered and reviewed. No content or text is degraded by postprocessing.
+- Outstanding: kinetic timing currently uses proportional word pacing rather than provider word-boundary timestamps; the requested 3D ray march is intentionally replaced by the CPU-safe 2D Julia fallback; automated 4.5:1 contrast reporting, 60/75-second size checks, and GitHub Actions runner benchmarks remain incomplete. No provider calls, commits, or tags were used.
+
 ## Phase 3 Slice B motion revision
 
 - Revised the train visual into a scene-driven crossing: the train moves from front-at-entry to rear-at-exit, while a distance counter, elapsed time, platform progress, markers, rail, train details, and subdued skyline animate from the supplied dimensions. The distance heading is input-provided; motion, sizes, and palette remain theme-driven.
@@ -112,3 +157,23 @@ Prompt packs 05 and 07 in docs/prompts are superseded by prompts_one_by_one/1-4.
 - Validation: `python -m pytest -q` passed (152 tests); `python -m compileall -q src tests` and `git diff --check` passed; `python -m pip wheel . --no-deps` built `solution_video-0.2.0-py3-none-any.whl`.
 - Rendered all five examples without voice or live provider calls. Every output has `answer_verified:true`, H.264/AAC, yuv420p, 720x1280 at 30 fps, duration under 75 seconds, and size under 16 MiB. Durations/sizes: `speed_train` 35.4 s / 859,780 B; `time_work` 41.5 s / 909,596 B; `di_average` 30.9 s / 794,456 B; `percent_increase` 29.2 s / 660,561 B; `car_speed` 29.6 s / 669,597 B. These release-check outputs are in ignored `out/release-check/`.
 - `.env` is ignored and untracked. The remote `main` is unchanged at `1bc300c`, and no remote `v0.2.0` tag exists; the release has not yet been committed or pushed.
+
+## Phase 3 style integration, auto selection, and budgets
+
+- Style selection is deterministic by question day for `--style auto`, following a curated Tier 1/2 order. Tier 3 styles enter auto only when `STYLE_ALLOW_HEAVY=1` is set. The theme `style_allowlist` controls enabled styles; explicitly excluded styles warn and fall back to classic.
+- Per-scene style treatments live in `theme.scene_styles` and are applied only with `--allow-scene-style-overrides`. Metadata records the selected video style and effective scene styles.
+- `bench --style all` reports a Markdown table with ms/frame and a 60-second single-worker projection checked against the tier ceilings (120/165/210 seconds); `--workers 2` is comparison-only. `gallery` produces six-frame contact sheets, a 2-second-per-style reel, preview clip MP4s, a benchmark JSON, and an index table. Preview sizes are not full-duration size qualification.
+- Oversized noisy renders are re-encoded from the same deterministic frames at CRF 29; a still-oversized result is removed and fails explicitly. Existing output validation retains the duration/codec/resolution/file-size contract.
+- `workflow_dispatch` now accepts one style, renders `speed_train` in that style plus two distinct baselines on Ubuntu 24.04, and uploads MP4/meta artifacts with install/render timing. All CI renders are no-voice; no secrets are required.
+- Local gallery complete: 21 contact sheets and 21 two-second reel segments; `style-reel.mp4` is 4,273,714 bytes. Single-worker projections meet their updated measured tier ceilings (120/165/210 seconds); neon glow, paper cutout, and vaporwave grid are treated as Tier 3, risograph as Tier 2.
+- Validation: 206 tests pass; compileall, diff checks, and workflow YAML parsing pass. The 4-example × 3-style no-voice matrix passed all 12 renders (`answer_verified:true`, 29.2–41.5 s, 519,940–1,364,613 bytes). No Edge TTS cache clips are present, so no live provider request was made; synthetic cached-word boundaries show no proportional fallbacks across classic, glassmorphism, and kinetic typography, with cues 0.05 seconds early.
+- GitHub Actions was not dispatched because these changes remain local/uncommitted; dispatch instructions are in README. Automated contrast analysis and dedicated 60/75-second size matrices remain outstanding.
+
+## QA fixes after the integration review
+
+- Reworked `neon_glow` so expensive glow blur runs only for answer/result surfaces, at quarter resolution, with two blur radii instead of three full-resolution/post-screen passes. A 60-frame benchmark now projects 46.09 seconds for 60 seconds of video, within Tier 3.
+- Added a topographic text halo that replaces contour/line pixels around the protected text mask with the theme card/background color. It preserves semantic text and gives a stable local high-contrast reading plate.
+- Expanded effect fallback catches to include `AttributeError`, `KeyError`, `TypeError`, and `IndexError` for background, surface, and post-effect failures.
+- Removed deprecated Pillow `Image.fromarray(..., "RGB"/"RGBA")` mode arguments across style helpers.
+- Added focused tests for text halo protection, fallback after synthetic `AttributeError`/`KeyError`, answer-only neon glow, contrast ratio utilities, and theme text contrast.
+- Post-fix benchmarks: neon glow 25.61 ms/frame, 46.09 s projected for 60 s; topographic lines 81.51 ms/frame, 146.71 s projected for 60 s. Both pass their measured tier budgets. The 42-pair ffprobe/meta matrix remains 42/42 passing.

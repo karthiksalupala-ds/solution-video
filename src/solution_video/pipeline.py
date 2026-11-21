@@ -11,16 +11,17 @@ import sys
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterable
 
 from PIL import Image, ImageChops
 from pydantic import ValidationError
 
-from .engine.audio import AudioMixer, mix_voice_tracks, write_wav
+from .engine.audio import AudioMixer, LoudnessError, mix_voice_tracks, normalize_final_mix, write_wav
 from .engine.easing import progress_at
 from .engine.encode import encode_frames
-from .engine.output import OutputValidationError, validate_output
+from .engine.output import MAX_OUTPUT_BYTES, OutputValidationError, validate_output
 from .engine.theme import Theme, load_theme
+from .styles import StyleContext, registered_styles, resolve_style, style_motion, style_theme
 from .engine.timeline import Cue, SceneTiming
 from .schema import Meta, SolutionSpec, VoiceClipMeta
 from .schema import QuestionInput
@@ -32,10 +33,22 @@ from .llm.base import (
     resolve_speech_language_mode,
 )
 from .llm.base import rate_limit_delay
+
+
+def _unlink_with_retry(path: Path, attempts: int = 8, delay_s: float = 0.05) -> None:
+    """Remove temporary audio on Windows after subprocesses close file handles."""
+    for attempt in range(attempts):
+        try:
+            path.unlink(missing_ok=True)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay_s)
 from .verify import verify
 from .scenes import AnswerScene, OutroScene, QuestionScene, StepScene, TipScene, TitleScene
 from .scenes.hello import HelloScene, HelloSpec
-from .scenes.common import draw_layout, fit, make_canvas
+from .scenes.common import STYLE_FALLBACK_EXCEPTIONS, draw_layout, fit, make_canvas
 from .engine.assets import FontBook
 from .engine.canvas import Canvas
 from .engine.text import reveal_words
@@ -99,17 +112,42 @@ class PlannedScene:
         return preferred_duration_s * progress
 
     def render_frame(self, time_s: float, theme: Theme):
-        base_time_s = self.render_time(time_s)
+        scene_theme = getattr(self.scene, "theme", theme)
+        style = resolve_style(scene_theme.style, allowed_styles=scene_theme.style_allowlist)
+        visual_time_s = (
+            math.floor(time_s * style_motion(scene_theme, "pixel_art", "playback_fps"))
+            / style_motion(scene_theme, "pixel_art", "playback_fps")
+            if style.name == "pixel_art"
+            else time_s
+        )
+        base_time_s = self.render_time(visual_time_s)
         if isinstance(self.scene, StepScene):
             frame = self.scene.render_frame(
                 base_time_s,
-                visual_time_s=self.plugin_time(time_s, theme),
+                visual_time_s=self.plugin_time(visual_time_s, theme),
             )
         else:
             frame = self.scene.render_frame(base_time_s)
-        if theme.voice.get("captions") and self.caption_text and time_s < self.narration_duration_s:
-            frame = _caption_frame(frame, self.caption_text, time_s, self.narration_duration_s, theme)
-        return frame
+        if scene_theme.voice.get("captions") and self.caption_text and time_s < self.narration_duration_s:
+            frame = _caption_frame(frame, self.caption_text, time_s, self.narration_duration_s, scene_theme)
+        seed = getattr(getattr(self.scene, "question", None), "day", getattr(self.scene, "step_index", 1))
+        style = resolve_style(scene_theme.style, int(seed), scene_theme.style_allowlist)
+        context = StyleContext(
+            theme=scene_theme,
+            seed=int(seed),
+            scene_name=self.name,
+            time_s=time_s,
+            cue_times=tuple(self.cue_time(cue.name) for cue in self.reveal_cues),
+        )
+        try:
+            return style.post(frame, context)
+        except STYLE_FALLBACK_EXCEPTIONS as exc:
+            import warnings
+
+            from .styles.classic import ClassicStyle
+
+            warnings.warn(f"Style {style.name!r} post-effect failed; using classic: {exc}", RuntimeWarning, stacklevel=2)
+            return ClassicStyle().post(frame, context)
 
 
 def _reading_duration(text: str, minimum: float, maximum: float) -> float:
@@ -197,19 +235,42 @@ def _event_positions(name: str, scene: object, base_duration_s: float) -> tuple[
     return ()
 
 
-def plan_scenes(spec: SolutionSpec, theme: Theme) -> tuple[PlannedScene, ...]:
+def _scene_theme(theme: Theme, scene_name: str, enabled: bool) -> Theme:
+    if not enabled or scene_name not in theme.scene_styles:
+        return theme
+    requested = theme.scene_styles[scene_name]
+    allowed = set(theme.style_allowlist) if theme.style_allowlist else set(registered_styles())
+    if requested not in registered_styles() or requested not in allowed:
+        import warnings
+
+        warnings.warn(
+            f"Scene style {requested!r} is unavailable; using video style {theme.style!r}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return theme
+    style = resolve_style(requested, allowed_styles=theme.style_allowlist)
+    return style_theme(theme, style.name)
+
+
+def plan_scenes(
+    spec: SolutionSpec,
+    theme: Theme,
+    *,
+    allow_scene_styles: bool = False,
+) -> tuple[PlannedScene, ...]:
     question = spec.question_input
     plan: list[PlannedScene] = [
-        PlannedScene("title", TitleScene(question, theme), 3.0),
-        PlannedScene("question", QuestionScene(question, theme), _reading_duration(question.question, 5.0, 9.0)),
+        PlannedScene("title", TitleScene(question, _scene_theme(theme, "title", allow_scene_styles)), 3.0),
+        PlannedScene("question", QuestionScene(question, _scene_theme(theme, "question", allow_scene_styles)), _reading_duration(question.question, 5.0, 9.0)),
     ]
     for index, step in enumerate(spec.steps, 1):
-        plan.append(PlannedScene("step", StepScene(step, index, len(spec.steps), theme), _reading_duration(" ".join([step.label, *step.lines]), 3.2, 8.5)))
+        plan.append(PlannedScene("step", StepScene(step, index, len(spec.steps), _scene_theme(theme, "step", allow_scene_styles)), _reading_duration(" ".join([step.label, *step.lines]), 3.2, 8.5)))
     if spec.tip:
-        plan.append(PlannedScene("tip", TipScene(spec.tip, theme), _reading_duration(spec.tip.display, 2.5, 4.5)))
-    plan.append(PlannedScene("answer", AnswerScene(spec.answer, question, theme), 4.0))
+        plan.append(PlannedScene("tip", TipScene(spec.tip, _scene_theme(theme, "tip", allow_scene_styles)), _reading_duration(spec.tip.display, 2.5, 4.5)))
+    plan.append(PlannedScene("answer", AnswerScene(spec.answer, question, _scene_theme(theme, "answer", allow_scene_styles)), 4.0))
     if spec.cta:
-        plan.append(PlannedScene("outro", OutroScene(spec.cta, theme), _reading_duration(spec.cta.display, 2.0, 3.5)))
+        plan.append(PlannedScene("outro", OutroScene(spec.cta, _scene_theme(theme, "outro", allow_scene_styles)), _reading_duration(spec.cta.display, 2.0, 3.5)))
     cap = question.time_sec or 75
     total = sum(item.duration_s for item in plan)
     if total > cap:
@@ -239,6 +300,8 @@ def _render_scene_frames(plan: tuple[PlannedScene, ...], theme: Theme):
             if overlap else None
         )
         overlap_start = frame_count - overlap
+        scene_theme = getattr(item.scene, "theme", theme)
+        style = resolve_style(scene_theme.style, getattr(getattr(item.scene, "question", None), "day", 1), scene_theme.style_allowlist)
         for frame_index in range(frame_count):
             time_s = frame_index / theme.canvas.fps
             frame = item.render_frame(time_s, theme)
@@ -252,6 +315,7 @@ def _render_scene_frames(plan: tuple[PlannedScene, ...], theme: Theme):
                     next_background,
                     alpha,
                     max(120, theme.safe_margin_px * 3),
+                    style,
                 )
             yield frame
 
@@ -259,7 +323,7 @@ def _render_scene_frames(plan: tuple[PlannedScene, ...], theme: Theme):
 def _scene_background(scene: object, time_s: float, theme: Theme) -> Image.Image:
     question = getattr(scene, "question", None)
     seed = getattr(question, "day", getattr(scene, "step_index", 1))
-    return make_canvas(theme, time_s, int(seed)).final_rgb()
+    return make_canvas(getattr(scene, "theme", theme), time_s, int(seed)).final_rgb()
 
 
 def _crossfade_background_and_header(
@@ -269,8 +333,10 @@ def _crossfade_background_and_header(
     incoming_background: Image.Image,
     alpha: float,
     header_height: int,
+    style: object | None = None,
 ) -> Image.Image:
-    background = Image.blend(outgoing_background, incoming_background, alpha)
+    transition = getattr(style, "transition", None)
+    background = transition(outgoing_background, incoming_background, alpha) if callable(transition) else Image.blend(outgoing_background, incoming_background, alpha)
     difference = ImageChops.difference(outgoing, outgoing_background).convert("L")
     content_mask = difference.point([0] * 9 + [255] * 247)
     frame = Image.composite(outgoing, background, content_mask)
@@ -301,6 +367,8 @@ def render(
     no_voice: bool = False,
     voice_provider: str | None = None,
     sync_report: bool = False,
+    style: str | None = None,
+    allow_scene_styles: bool = False,
 ) -> Meta:
     """Render a verified solution with optional cached, synchronized narration."""
     del voice
@@ -309,13 +377,19 @@ def render(
         meta = Meta(path=str(output_path), duration_s=0, size_bytes=0, answer_verified=False, status="blocked", reasons=list(gate.reasons))
         output_path.with_suffix(".meta.json").write_text(json.dumps(meta.model_dump(), indent=2), encoding="utf-8")
         raise ValueError("Accuracy gate blocked render: " + "; ".join(gate.reasons))
+    resolved_style = resolve_style(style or theme.style, spec.question_input.day, theme.style_allowlist)
+    theme = style_theme(theme, resolved_style.name)
     voice_inputs = _speech_inputs(spec)
     if no_voice:
         voice_result = VoiceRender(tuple(None for _ in voice_inputs), (), "none", None, 0, 0)
     else:
         voice_result = synthesize_voice(voice_inputs, provider_override=voice_provider)
     theme = _voice_theme(theme, voice_result)
-    plan = plan_scenes(spec, theme)
+    plan = plan_scenes(spec, theme, allow_scene_styles=allow_scene_styles)
+    effective_scene_styles = {
+        item.name: getattr(item.scene, "theme", theme).style
+        for item in plan
+    }
     padding = _voice_padding(theme)
     plan = _apply_voice_durations(plan, voice_result, padding)
     duration_s = sum(item.duration_s for item in plan)
@@ -331,6 +405,7 @@ def render(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wav_path = output_path.with_suffix(".phase2.wav")
     mixed_wav_path = output_path.with_suffix(".phase5.wav")
+    normalized_wav_path = output_path.with_suffix(".final.wav")
     mixer = AudioMixer(44_100, duration_s, spec.seed)
     cursor = 0.0
     for index, item in enumerate(plan):
@@ -358,19 +433,34 @@ def render(
             final_audio = mixed_wav_path
         else:
             final_audio = wav_path
-        frames = _render_scene_frames(plan, theme)
-        encode_frames(frames, theme.canvas.width, theme.canvas.height, theme.canvas.fps, final_audio, output_path, duration_s)
+        try:
+            loudness = normalize_final_mix(final_audio, normalized_wav_path, narration_exists=bool(offsets))
+        except LoudnessError as exc:
+            raise OutputValidationError(str(exc)) from exc
+        if loudness.mean_db < -28.0:
+            warnings = [f"Final mix mean volume is low ({loudness.mean_db:.1f} dB)"]
+        else:
+            warnings = []
+        crf_retry = _encode_with_size_retry(
+            lambda: _render_scene_frames(plan, theme),
+            theme,
+            normalized_wav_path,
+            output_path,
+            duration_s,
+            tuple(effective_scene_styles.values()),
+        )
+        if crf_retry:
+            warnings.append("Oversized noisy style was re-rendered at CRF 29 to meet the 16 MiB limit")
     finally:
-        wav_path.unlink(missing_ok=True)
-        mixed_wav_path.unlink(missing_ok=True)
+        _unlink_with_retry(wav_path)
+        _unlink_with_retry(mixed_wav_path)
+        _unlink_with_retry(normalized_wav_path)
     try:
         validate_output(output_path, expect_audio=True)
     except OutputValidationError:
         output_path.unlink(missing_ok=True)
         raise
-    warnings = list(voice_result.warnings)
-    if no_voice:
-        warnings = []
+    warnings.extend(voice_result.warnings)
     clip_meta = []
     step_number = 0
     for item, clip in zip(plan, voice_result.clips):
@@ -396,10 +486,71 @@ def render(
         voice_characters=voice_result.characters,
         voice_credits=voice_result.credits,
         voice_clips=clip_meta,
+        style=resolved_style.name,
+        scene_styles=effective_scene_styles,
         warnings=warnings,
     )
     output_path.with_suffix(".meta.json").write_text(json.dumps(meta.model_dump(), indent=2), encoding="utf-8")
     return meta
+
+
+_NOISY_STYLES = {
+    "ascii_art",
+    "dithering",
+    "flow_fields",
+    "glitch",
+    "halftone_dots",
+    "holographic_foil",
+    "neon_glow",
+    "metaballs",
+    "particle_swarm",
+    "pixel_art",
+    "ray_marched_fractals",
+    "risograph_print",
+    "topographic_lines",
+    "liquid_morph",
+}
+
+
+def _encode_with_size_retry(
+    frames_factory: Callable[[], Iterable[Image.Image]],
+    theme: Theme,
+    audio_path: Path,
+    output_path: Path,
+    duration_s: float,
+    style_name: str | tuple[str, ...],
+) -> bool:
+    encode_frames(
+        frames_factory(),
+        theme.canvas.width,
+        theme.canvas.height,
+        theme.canvas.fps,
+        audio_path,
+        output_path,
+        duration_s,
+    )
+    selected_styles = {style_name} if isinstance(style_name, str) else set(style_name)
+    noisy_style = selected_styles & _NOISY_STYLES
+    if not noisy_style or output_path.stat().st_size <= MAX_OUTPUT_BYTES:
+        return False
+    encode_frames(
+        frames_factory(),
+        theme.canvas.width,
+        theme.canvas.height,
+        theme.canvas.fps,
+        audio_path,
+        output_path,
+        duration_s,
+        crf=29,
+    )
+    size = output_path.stat().st_size
+    if size > MAX_OUTPUT_BYTES:
+        output_path.unlink(missing_ok=True)
+        raise OutputValidationError(
+            f"Noisy style(s) {', '.join(sorted(noisy_style))} remain over 16 MiB after CRF 29 "
+            f"({size} bytes); simplify the style or shorten the video."
+        )
+    return True
 
 
 def _speech_inputs(spec: SolutionSpec) -> tuple[VoiceInput, ...]:
@@ -498,7 +649,7 @@ def _cue_word_offset(
             numeric = re.search(r"(?<!\w)-?\d+(?:,\d{3})*(?:\.\d+)?", line)
             target = number_to_words(numeric.group(0)) if numeric else line
         elif cue_name == "label":
-            target = scene.step.label
+            target = scene.step.speech or scene.step.label
     elif item.name == "question":
         if cue_name == "question":
             target = scene.question.question

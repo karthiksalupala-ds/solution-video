@@ -17,6 +17,14 @@ def _repo_root() -> Path:
     raise FileNotFoundError("Packaged themes and fonts are missing; reinstall solution-video with package data.")
 
 
+def _immutable_theme_value(value: object) -> object:
+    if isinstance(value, dict):
+        return {key: _immutable_theme_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return tuple(_immutable_theme_value(item) for item in value)
+    return value
+
+
 @dataclass(frozen=True)
 class CanvasConfig:
     width: int
@@ -33,10 +41,14 @@ class Theme:
     min_body_font_px: int
     fonts: dict[str, Path]
     colors: dict[str, tuple[int, int, int]]
+    style_palettes: dict[str, dict[str, object]]
     sizes: dict[str, int]
     motion: dict[str, float]
     branding: dict[str, object]
     voice: dict[str, object]
+    style: str
+    style_allowlist: tuple[str, ...]
+    scene_styles: dict[str, str]
 
 
 def load_theme(path: Path | None = None) -> Theme:
@@ -49,7 +61,12 @@ def load_theme(path: Path | None = None) -> Theme:
         raise ValueError(f"Unable to load theme {source}: {exc}") from exc
     try:
         fonts = {name: root / relative for name, relative in data["fonts"].items()}
+        fonts.setdefault("pixel", root / "fonts" / "PressStart2P-Regular.ttf")
         colors = {name: tuple(value) for name, value in data["colors"].items()}
+        style_palettes = {
+            style: {name: _immutable_theme_value(value) for name, value in palette.items()}
+            for style, palette in data.get("style_palettes", {}).items()
+        }
         canvas = data["canvas"]
         config = CanvasConfig(int(canvas["width"]), int(canvas["height"]), int(canvas["fps"]), int(canvas["supersample"]))
     except (KeyError, TypeError, ValueError) as exc:
@@ -59,11 +76,25 @@ def load_theme(path: Path | None = None) -> Theme:
     missing = [str(font) for font in fonts.values() if not font.is_file()]
     if missing:
         raise ValueError(f"Theme font asset(s) missing: {', '.join(missing)}")
+    style_allowlist = data.get("style_allowlist", ())
+    scene_styles = data.get("scene_styles", {})
+    if not isinstance(style_allowlist, (list, tuple)) or any(not isinstance(style, str) or not style.strip() for style in style_allowlist):
+        raise ValueError(f"Theme {source} style_allowlist must be a list of non-empty style names")
+    if not isinstance(scene_styles, dict) or any(
+        not isinstance(scene, str) or not isinstance(style, str)
+        or not scene.strip() or not style.strip()
+        for scene, style in scene_styles.items()
+    ):
+        raise ValueError(f"Theme {source} scene_styles must map scene names to non-empty style names")
     return Theme(
         name=str(data.get("name", source.stem)), canvas=config,
         safe_margin_px=int(data["safe_margin_px"]), min_body_font_px=int(data["min_body_font_px"]),
-        fonts=fonts, colors=colors, sizes={key: int(value) for key, value in data.get("sizes", {}).items()},
+        fonts=fonts, colors=colors, style_palettes=style_palettes,
+        sizes={key: int(value) for key, value in data.get("sizes", {}).items()},
         motion={key: float(value) if isinstance(value, (int, float)) else value for key, value in data.get("motion", {}).items()},
         branding=dict(data.get("branding", {})),
         voice=dict(data.get("voice", {})),
+        style=str(data.get("style", "classic")),
+        style_allowlist=tuple(style.strip().lower() for style in style_allowlist),
+        scene_styles={scene.strip().lower(): style.strip().lower() for scene, style in scene_styles.items()},
     )

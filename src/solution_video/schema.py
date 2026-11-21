@@ -160,6 +160,8 @@ class Meta(BaseModel):
     voice_characters: int = Field(default=0, ge=0)
     voice_credits: int = Field(default=0, ge=0)
     voice_clips: list[VoiceClipMeta] = Field(default_factory=list)
+    style: str = "classic"
+    scene_styles: dict[str, str] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     version: str = "0.2.0"
 

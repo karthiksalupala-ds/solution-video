@@ -6,7 +6,7 @@ from ..engine.assets import FontBook
 from ..engine.easing import out_back
 from ..engine.theme import Theme
 from ..schema import QuestionInput
-from .common import draw_footer, draw_layout, fit, make_canvas, scene_progress
+from .common import draw_footer, draw_layout, draw_surface, fit, make_canvas, scene_progress
 
 
 class TitleScene:
@@ -27,12 +27,8 @@ class TitleScene:
             pill_y = round(theme.canvas.height * theme.motion.get("day_pill_top_ratio", 0.22))
             pill_height = theme.motion.get("day_pill_height_px", 84)
             lift = (1 - min(1.0, out_back(progress))) * theme.motion.get("day_pill_lift_px", 54)
-            canvas.rounded_rect(
-                (theme.canvas.width / 2 - pill_width / 2, pill_y + lift,
-                 theme.canvas.width / 2 + pill_width / 2, pill_y + pill_height + lift),
-                pill_height / 2,
-                (*theme.colors["accent"], round(255 * progress)),
-            )
+            draw_surface(canvas, theme, "day", (theme.canvas.width / 2 - pill_width / 2, pill_y + lift,
+                 theme.canvas.width / 2 + pill_width / 2, pill_y + pill_height + lift), pill_height / 2, seed=self.question.day, time_s=time_s, opacity=progress)
             canvas.text(
                 (theme.canvas.width / 2, pill_y + pill_height / 2 + lift),
                 intro,
@@ -49,7 +45,7 @@ class TitleScene:
             theme.canvas.width - 2 * margin - 20,
             350,
             theme.sizes.get("title_px", 82),
-            3,
+            3, min_size=44,
         )
         draw_layout(
             canvas,
@@ -71,12 +67,8 @@ class TitleScene:
                 + theme.motion.get("difficulty_chip_padding_px", 54)
             )
             chip_y = round(theme.canvas.height * theme.motion.get("title_difficulty_center_ratio", 0.73) - chip_height / 2)
-            canvas.rounded_rect(
-                (theme.canvas.width / 2 - chip_width / 2, chip_y,
-                 theme.canvas.width / 2 + chip_width / 2, chip_y + chip_height),
-                chip_height / 2,
-                (*theme.colors["info"], round(225 * progress)),
-            )
+            draw_surface(canvas, theme, "chip", (theme.canvas.width / 2 - chip_width / 2, chip_y,
+                 theme.canvas.width / 2 + chip_width / 2, chip_y + chip_height), chip_height / 2, seed=self.question.day, time_s=time_s, opacity=progress)
             canvas.text(
                 (theme.canvas.width / 2, chip_y + chip_height / 2),
                 self.question.difficulty,

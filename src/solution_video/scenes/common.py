@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -12,6 +13,18 @@ from ..engine.canvas import Canvas
 from ..engine.easing import out_cubic, progress_at
 from ..engine.text import TextLayout, fit_text
 from ..engine.theme import Theme
+from ..styles import StyleContext, resolve_style
+
+
+STYLE_FALLBACK_EXCEPTIONS = (
+    OSError,
+    RuntimeError,
+    ValueError,
+    KeyError,
+    TypeError,
+    AttributeError,
+    IndexError,
+)
 
 
 @lru_cache(maxsize=8)
@@ -22,8 +35,28 @@ def _background(width: int, height: int, top: tuple[int, int, int], bottom: tupl
 
 
 def make_canvas(theme: Theme, time_s: float = 0.0, seed: int = 1) -> Canvas:
-    canvas = Canvas(theme.canvas.width, theme.canvas.height, background=theme.colors["bg_top"])
-    canvas.composite(_background(theme.canvas.width, theme.canvas.height, theme.colors["bg_top"], theme.colors["bg_bottom"]))
+    context = StyleContext(theme=theme, seed=seed, time_s=time_s)
+    style = resolve_style(theme.style, seed)
+    canvas = Canvas(
+        theme.canvas.width,
+        theme.canvas.height,
+        background=theme.colors["bg_top"],
+        track_text_mask=bool(getattr(style, "requires_text_mask", False)),
+    )
+    begin_frame = getattr(style, "begin_frame", None)
+    if callable(begin_frame):
+        begin_frame(context)
+    try:
+        style.background(canvas, context)
+    except STYLE_FALLBACK_EXCEPTIONS as exc:
+        import warnings
+
+        from ..styles import ClassicStyle
+
+        warnings.warn(f"Style {style.name!r} background failed; using classic: {exc}", RuntimeWarning, stacklevel=2)
+        ClassicStyle().background(canvas, context)
+    if getattr(style, "handles_background_fx", False):
+        return canvas
     period = max(1.0, theme.motion.get("background_period_s", 18.0))
     phase = (time_s % period) / period
     glow_bucket = round(phase * 24) % 24
@@ -49,6 +82,33 @@ def make_canvas(theme: Theme, time_s: float = 0.0, seed: int = 1) -> Canvas:
             draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=(*theme.colors["text"], particle_alpha))
         canvas.composite(layer)
     return canvas
+
+
+def draw_surface(
+    canvas: Canvas,
+    theme: Theme,
+    kind: str,
+    box: tuple[float, float, float, float],
+    radius: float,
+    *,
+    seed: int = 1,
+    time_s: float = 0.0,
+    opacity: float = 1.0,
+) -> None:
+    """Ask the selected style for a semantic card surface."""
+    if opacity <= 0 or box[2] <= box[0] or box[3] <= box[1]:
+        return
+    style = resolve_style(theme.style, seed)
+    context = StyleContext(theme=theme, seed=seed, time_s=time_s, opacity=max(0.0, min(1.0, opacity)))
+    try:
+        style.surface(canvas, context, kind, box, radius)
+    except STYLE_FALLBACK_EXCEPTIONS as exc:
+        import warnings
+
+        from ..styles import ClassicStyle
+
+        warnings.warn(f"Style {style.name!r} surface failed; using classic: {exc}", RuntimeWarning, stacklevel=2)
+        ClassicStyle().surface(canvas, context, kind, box, radius)
 
 
 @lru_cache(maxsize=32)
@@ -112,16 +172,55 @@ def draw_confetti(canvas: Canvas, theme: Theme, time_s: float, seed: int = 1) ->
 
 def draw_header(canvas: Canvas, fonts: FontBook, theme: Theme, title: str, progress: float = 1.0) -> None:
     alpha = round(255 * out_cubic(max(progress, theme.motion.get("header_min_progress", 0.48))))
-    canvas.text((theme.safe_margin_px, 105), title, fonts.get("bold", 30), (*theme.colors["accent"], alpha), anchor="la")
+    role = "pixel" if theme.style == "pixel_art" else "bold"
+    size = 30
+    canvas.text((theme.safe_margin_px, 105), title, fonts.get(role, size), (*theme.colors["accent"], alpha), anchor="la")
 
 
-def fit(theme: Theme, role: str, text: str, width: int, height: int, start_size: int, max_lines: int) -> TextLayout:
-    return fit_text(text, str(theme.fonts[role]), width, height, start_size, theme.min_body_font_px, max_lines)
+def fit(
+    theme: Theme,
+    role: str,
+    text: str,
+    width: int,
+    height: int,
+    start_size: int,
+    max_lines: int,
+    *,
+    min_size: int | None = None,
+) -> TextLayout:
+    return fit_text(text, str(theme.fonts[role]), width, height, start_size, max(theme.min_body_font_px, min_size or 0), max_lines)
 
 
-def draw_layout(canvas: Canvas, fonts: FontBook, theme: Theme, layout: TextLayout, x: float, y: float, *, role: str, color: str = "text", alpha: int = 255, anchor: str = "la", line_gap: int = 8) -> None:
-    font = fonts.get(role, layout.font_size)
+def draw_layout(canvas: Canvas, fonts: FontBook, theme: Theme, layout: TextLayout, x: float, y: float, *, role: str, color: str = "text", alpha: int = 255, anchor: str = "la", line_gap: int = 8, time_s: float | None = None) -> None:
+    font_role = "pixel" if theme.style == "pixel_art" and role == "bold" and layout.font_size <= 36 else role
+    font_size = layout.font_size
+    font = fonts.get(font_role, font_size)
     line_height = font.getbbox("Ag")[3] - font.getbbox("Ag")[1] + line_gap
+    if theme.style == "kinetic_typography" and time_s is not None:
+        word_index = 0
+        interval = float(theme.style_palettes["kinetic_typography"]["word_interval_s"])
+        for line_index, line in enumerate(layout.lines):
+            cursor_x = x
+            if anchor in {"ma", "mm"}:
+                cursor_x -= font.getlength(line) / 2
+            elif anchor in {"ra", "rm"}:
+                cursor_x -= font.getlength(line)
+            for match in re.finditer(r"\S+", line):
+                word = match.group()
+                word_x = cursor_x + font.getlength(line[:match.start()])
+                progress = out_cubic(progress_at(time_s, 0.18 + word_index * interval, 0.24))
+                if progress > 0:
+                    emphasis = bool(re.search(r"\d|%|km/h|m/s|days?", word, re.IGNORECASE))
+                    word_color = theme.colors["accent"] if emphasis else theme.colors[color]
+                    canvas.text(
+                        (word_x + (1.0 - progress) * 18, y + line_index * line_height),
+                        word,
+                        font,
+                        (*word_color, round(alpha * progress)),
+                        anchor="la",
+                    )
+                word_index += 1
+        return
     for index, line in enumerate(layout.lines):
         canvas.text((x, y + index * line_height), line, font, (*theme.colors[color], alpha), anchor=anchor)
 
